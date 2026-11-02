@@ -1,0 +1,90 @@
+# Out-of-source CMake builds and local presets
+[Bb]uild/
+[Bb]uild-*/
+[Bb]uild_*/
+cmake-build-*/
+/out/
+CMakeUserPresets.json
+
+# Generated CMake files (including accidental in-source configuration)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+DartConfiguration.tcl
+Testing/
+install_manifest.txt
+compile_commands.json
+Makefile
+build.ninja
+rules.ninja
+.ninja_deps
+.ninja_log
+
+# Xcode projects and user state
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+DerivedData/
+
+# Visual Studio projects, caches, and build output
+.vs/
+*.sln
+*.slnx
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.suo
+*.user
+*.VC.db
+*.VC.opendb
+*.tlog/
+[Dd]ebug/
+[Rr]elease/
+RelWithDebInfo/
+MinSizeRel/
+x64/
+x86/
+
+# IDE and editor caches
+.idea/
+.vscode/
+.cache/
+ipch/
+*.swp
+*.swo
+*~
+
+# Local agent instructions
+/AGENTS.md
+
+# Compiled objects, libraries, executables, and debug symbols
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app/
+*.dSYM/
+*.pdb
+*.idb
+*.ilk
+*.pch
+*.gch
+*.exp
+
+# Operating system metadata
+.DS_Store
+._*
+.Spotlight-V100/
+.Trashes/
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
