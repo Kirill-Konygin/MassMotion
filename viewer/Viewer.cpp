@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <memory>
 #include <numbers>
@@ -40,17 +41,32 @@ bool DrawArrow(SDL_Renderer* renderer, MassMotion::Cell cell, SDL_FPoint center,
     return SDL_RenderLines(renderer, points, 5);
 }
 
-bool DrawGrid(SDL_Renderer* renderer, const MassMotion::GridState& state, std::size_t goalX,
-              std::size_t goalY)
+bool DrawGrid(SDL_Renderer* renderer, const MassMotion::GridState& state, std::size_t goalX, std::size_t goalY)
 {
-    constexpr float cellSize = 40.0f;
-    constexpr float origin = 24.0f;
+    int outputWidth = 0;
+    int outputHeight = 0;
+    if (!SDL_GetRenderOutputSize(renderer, &outputWidth, &outputHeight))
+    {
+        return false;
+    }
+
+    constexpr float padding = 24.0f;
+    const float cellSize =
+        std::min((static_cast<float>(outputWidth) - padding * 2.0f) / static_cast<float>(state.width),
+                 (static_cast<float>(outputHeight) - padding * 2.0f) / static_cast<float>(state.height));
+    if (cellSize <= 0.0f)
+    {
+        return true;
+    }
+
     const float gridWidth = cellSize * static_cast<float>(state.width);
     const float gridHeight = cellSize * static_cast<float>(state.height);
+    const float originX = (static_cast<float>(outputWidth) - gridWidth) * 0.5f;
+    const float originY = (static_cast<float>(outputHeight) - gridHeight) * 0.5f;
     const float inset = cellSize * 0.08f;
     const SDL_FRect goalRect = {
-        origin + static_cast<float>(goalX) * cellSize + inset,
-        origin + static_cast<float>(goalY) * cellSize + inset,
+        originX + static_cast<float>(goalX) * cellSize + inset,
+        originY + static_cast<float>(goalY) * cellSize + inset,
         cellSize - inset * 2.0f,
         cellSize - inset * 2.0f,
     };
@@ -61,16 +77,16 @@ bool DrawGrid(SDL_Renderer* renderer, const MassMotion::GridState& state, std::s
     }
     for (std::size_t x = 0; x <= state.width; ++x)
     {
-        const float lineX = origin + static_cast<float>(x) * cellSize;
-        if (!SDL_RenderLine(renderer, lineX, origin, lineX, origin + gridHeight))
+        const float lineX = originX + static_cast<float>(x) * cellSize;
+        if (!SDL_RenderLine(renderer, lineX, originY, lineX, originY + gridHeight))
         {
             return false;
         }
     }
     for (std::size_t y = 0; y <= state.height; ++y)
     {
-        const float lineY = origin + static_cast<float>(y) * cellSize;
-        if (!SDL_RenderLine(renderer, origin, lineY, origin + gridWidth, lineY))
+        const float lineY = originY + static_cast<float>(y) * cellSize;
+        if (!SDL_RenderLine(renderer, originX, lineY, originX + gridWidth, lineY))
         {
             return false;
         }
@@ -83,8 +99,8 @@ bool DrawGrid(SDL_Renderer* renderer, const MassMotion::GridState& state, std::s
     {
         for (std::size_t x = 0; x < state.width; ++x)
         {
-            const SDL_FPoint center = {origin + (static_cast<float>(x) + 0.5f) * cellSize,
-                                       origin + (static_cast<float>(y) + 0.5f) * cellSize};
+            const SDL_FPoint center = {originX + (static_cast<float>(x) + 0.5f) * cellSize,
+                                       originY + (static_cast<float>(y) + 0.5f) * cellSize};
             if (!DrawArrow(renderer, state.cells[y * state.width + x], center, cellSize))
             {
                 return false;
