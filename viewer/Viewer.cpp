@@ -41,7 +41,8 @@ bool DrawArrow(SDL_Renderer* renderer, MassMotion::Cell cell, SDL_FPoint center,
     return SDL_RenderLines(renderer, points, 5);
 }
 
-bool DrawGrid(SDL_Renderer* renderer, const MassMotion::GridState& state, std::size_t goalX, std::size_t goalY)
+bool DrawGrid(SDL_Renderer* renderer, const MassMotion::GridState& state, std::size_t goalX, std::size_t goalY,
+              SDL_FRect& gridRect)
 {
     int outputWidth = 0;
     int outputHeight = 0;
@@ -63,6 +64,7 @@ bool DrawGrid(SDL_Renderer* renderer, const MassMotion::GridState& state, std::s
     const float gridHeight = cellSize * static_cast<float>(state.height);
     const float originX = (static_cast<float>(outputWidth) - gridWidth) * 0.5f;
     const float originY = (static_cast<float>(outputHeight) - gridHeight) * 0.5f;
+    gridRect = {originX, originY, gridWidth, gridHeight};
     const float inset = cellSize * 0.08f;
     const SDL_FRect goalRect = {
         originX + static_cast<float>(goalX) * cellSize + inset,
@@ -130,15 +132,16 @@ int RunViewer()
     }
 
     MassMotion::Grid grid(20, 14);
-    constexpr std::size_t goalX = 10;
-    constexpr std::size_t goalY = 7;
+    std::size_t goalX = 10;
+    std::size_t goalY = 7;
     grid.SetGoal(goalX, goalY);
-    const MassMotion::GridState state = grid.GetState();
+    MassMotion::GridState state = grid.GetState();
 
     while (true)
     {
+        SDL_FRect gridRect{};
         if (!SDL_SetRenderDrawColor(renderer.get(), 24, 28, 34, 255) || !SDL_RenderClear(renderer.get()) ||
-            !DrawGrid(renderer.get(), state, goalX, goalY) || !SDL_RenderPresent(renderer.get()))
+            !DrawGrid(renderer.get(), state, goalX, goalY, gridRect) || !SDL_RenderPresent(renderer.get()))
         {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not render frame: %s", SDL_GetError());
             return EXIT_FAILURE;
@@ -156,6 +159,28 @@ int RunViewer()
             (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE))
         {
             return EXIT_SUCCESS;
+        }
+
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT)
+        {
+            SDL_FPoint mouse{};
+            if (!SDL_RenderCoordinatesFromWindow(renderer.get(), event.button.x, event.button.y, &mouse.x, &mouse.y))
+            {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not convert mouse coordinates: %s", SDL_GetError());
+                return EXIT_FAILURE;
+            }
+
+            if (mouse.x < gridRect.x || mouse.x >= gridRect.x + gridRect.w || mouse.y < gridRect.y ||
+                mouse.y >= gridRect.y + gridRect.h)
+            {
+                continue;
+            }
+
+            const float cellSize = gridRect.w / static_cast<float>(state.width);
+            goalX = std::min(static_cast<std::size_t>((mouse.x - gridRect.x) / cellSize), state.width - 1);
+            goalY = std::min(static_cast<std::size_t>((mouse.y - gridRect.y) / cellSize), state.height - 1);
+            grid.SetGoal(goalX, goalY);
+            state = grid.GetState();
         }
     }
 }
