@@ -52,4 +52,9 @@ void Grid::SetGoal(std::size_t x, std::size_t y)
     }
 }
 
+GridState Grid::GetState() const
+{
+    return {mWidth, mHeight, mCells};
+}
+
 } // namespace MassMotion

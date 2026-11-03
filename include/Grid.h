@@ -28,6 +28,14 @@ enum class Cell : std::uint8_t
     NorthWest
 };
 
+// An owning snapshot. Cells use row-major order: cells[y * width + x].
+struct GridState
+{
+    std::size_t width;
+    std::size_t height;
+    std::vector<Cell> cells;
+};
+
 // Coordinates start at the top-left: x increases east, y increases south.
 class Grid
 {
@@ -39,6 +47,9 @@ class Grid
     // Eight movement directions are allowed; the goal itself contains Cell::None.
     // Invalid coordinates throw std::out_of_range without changing the grid.
     void SetGoal(std::size_t x, std::size_t y);
+
+    // The snapshot remains valid and unchanged after the grid is updated or destroyed.
+    [[nodiscard]] GridState GetState() const;
 
   private:
     std::size_t mWidth;
