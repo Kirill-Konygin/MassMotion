@@ -7,7 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(MassMotion STATIC
+    src/Agent.cpp
     src/Grid.cpp
+    include/Agent.h
     include/Grid.h
 )
 
