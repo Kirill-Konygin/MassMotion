@@ -93,17 +93,30 @@ bool DrawGrid(SDL_Renderer* renderer, const MassMotion::GridState& state, std::s
             return false;
         }
     }
-    if (!SDL_SetRenderDrawColor(renderer, 164, 205, 225, 255))
-    {
-        return false;
-    }
     for (std::size_t y = 0; y < state.height; ++y)
     {
         for (std::size_t x = 0; x < state.width; ++x)
         {
+            if (state.obstacles[y * state.width + x])
+            {
+                const SDL_FRect obstacleRect = {
+                    originX + static_cast<float>(x) * cellSize + inset,
+                    originY + static_cast<float>(y) * cellSize + inset,
+                    cellSize - inset * 2.0f,
+                    cellSize - inset * 2.0f,
+                };
+                if (!SDL_SetRenderDrawColor(renderer, 190, 100, 70, 255) ||
+                    !SDL_RenderFillRect(renderer, &obstacleRect))
+                {
+                    return false;
+                }
+                continue;
+            }
+
             const SDL_FPoint center = {originX + (static_cast<float>(x) + 0.5f) * cellSize,
                                        originY + (static_cast<float>(y) + 0.5f) * cellSize};
-            if (!DrawArrow(renderer, state.cells[y * state.width + x], center, cellSize))
+            if (!SDL_SetRenderDrawColor(renderer, 164, 205, 225, 255) ||
+                !DrawArrow(renderer, state.cells[y * state.width + x], center, cellSize))
             {
                 return false;
             }
@@ -135,6 +148,9 @@ int RunViewer()
     std::size_t goalX = 10;
     std::size_t goalY = 7;
     grid.SetGoal(goalX, goalY);
+    grid.SetObstacle(2, 5);
+    grid.SetObstacle(3, 5);
+    grid.SetObstacle(4, 5);
     MassMotion::GridState state = grid.GetState();
 
     while (true)
@@ -161,7 +177,8 @@ int RunViewer()
             return EXIT_SUCCESS;
         }
 
-        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT)
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+            (event.button.button == SDL_BUTTON_LEFT || event.button.button == SDL_BUTTON_RIGHT))
         {
             SDL_FPoint mouse{};
             if (!SDL_RenderCoordinatesFromWindow(renderer.get(), event.button.x, event.button.y, &mouse.x, &mouse.y))
@@ -177,9 +194,28 @@ int RunViewer()
             }
 
             const float cellSize = gridRect.w / static_cast<float>(state.width);
-            goalX = std::min(static_cast<std::size_t>((mouse.x - gridRect.x) / cellSize), state.width - 1);
-            goalY = std::min(static_cast<std::size_t>((mouse.y - gridRect.y) / cellSize), state.height - 1);
-            grid.SetGoal(goalX, goalY);
+            const std::size_t x =
+                std::min(static_cast<std::size_t>((mouse.x - gridRect.x) / cellSize), state.width - 1);
+            const std::size_t y =
+                std::min(static_cast<std::size_t>((mouse.y - gridRect.y) / cellSize), state.height - 1);
+            if (event.button.button == SDL_BUTTON_RIGHT)
+            {
+                if (x == goalX && y == goalY)
+                {
+                    continue;
+                }
+                grid.SetObstacle(x, y, !state.obstacles[y * state.width + x]);
+            }
+            else
+            {
+                if (state.obstacles[y * state.width + x])
+                {
+                    continue;
+                }
+                grid.SetGoal(x, y);
+                goalX = x;
+                goalY = y;
+            }
             state = grid.GetState();
         }
     }

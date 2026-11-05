@@ -25,6 +25,7 @@ Grid::Grid(std::size_t width, std::size_t height) : mWidth(width), mHeight(heigh
     }
 
     mCells.resize(width * height, Cell::None);
+    mObstacles.resize(width * height, false);
 }
 
 void Grid::SetGoal(std::size_t x, std::size_t y)
@@ -52,9 +53,19 @@ void Grid::SetGoal(std::size_t x, std::size_t y)
     }
 }
 
+void Grid::SetObstacle(std::size_t x, std::size_t y, bool blocked)
+{
+    if (x >= mWidth || y >= mHeight)
+    {
+        throw std::out_of_range("Obstacle coordinates are outside the grid");
+    }
+
+    mObstacles[y * mWidth + x] = blocked;
+}
+
 GridState Grid::GetState() const
 {
-    return {mWidth, mHeight, mCells};
+    return {mWidth, mHeight, mCells, mObstacles};
 }
 
 } // namespace MassMotion
