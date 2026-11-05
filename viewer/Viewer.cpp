@@ -1,12 +1,16 @@
+#include "Agent.h"
 #include "Grid.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdlib>
 #include <memory>
 #include <numbers>
+#include <vector>
 
 bool DrawArrow(SDL_Renderer* renderer, MassMotion::Cell cell, SDL_FPoint center, float cellSize)
 {
@@ -125,6 +129,69 @@ bool DrawGrid(SDL_Renderer* renderer, const MassMotion::GridState& state, std::s
     return true;
 }
 
+bool DrawAgent(SDL_Renderer* renderer, const MassMotion::Agent& agent, const SDL_FRect& gridRect, std::size_t gridWidth)
+{
+    if (gridRect.w <= 0.0f)
+    {
+        return true;
+    }
+
+    const float cellSize = gridRect.w / static_cast<float>(gridWidth);
+    const auto position = agent.GetPosition();
+    const SDL_FPoint center = {gridRect.x + static_cast<float>(position.x) * cellSize,
+                               gridRect.y + static_cast<float>(position.y) * cellSize};
+    constexpr int segments = 32;
+    constexpr SDL_FColor color = {1.0f, 0.8f, 0.25f, 1.0f};
+    std::array<SDL_Vertex, segments + 1> vertices{};
+    std::array<int, segments * 3> indices{};
+    vertices[0] = {center, color, {}};
+    for (int i = 0; i < segments; ++i)
+    {
+        const float angle = 2.0f * std::numbers::pi_v<float> * static_cast<float>(i) / segments;
+        vertices[i + 1] = {
+            {center.x + std::cos(angle) * cellSize * 0.28f, center.y + std::sin(angle) * cellSize * 0.28f}, color, {}};
+        indices[i * 3] = 0;
+        indices[i * 3 + 1] = i + 1;
+        indices[i * 3 + 2] = (i + 1) % segments + 1;
+    }
+    if (!SDL_RenderGeometry(renderer, nullptr, vertices.data(), static_cast<int>(vertices.size()), indices.data(),
+                            static_cast<int>(indices.size())))
+    {
+        return false;
+    }
+
+    const auto direction = agent.GetDirection();
+    const SDL_FPoint forward{static_cast<float>(direction.x), static_cast<float>(direction.y)};
+    const SDL_FPoint side{-forward.y, forward.x};
+    const auto point = [&](float along, float across)
+    {
+        return SDL_FPoint{center.x + (forward.x * along + side.x * across) * cellSize,
+                          center.y + (forward.y * along + side.y * across) * cellSize};
+    };
+    constexpr SDL_FColor light{1.0f, 0.95f, 0.78f, 1.0f};
+    constexpr SDL_FColor dark{0.14f, 0.16f, 0.2f, 1.0f};
+    const SDL_Vertex headingVertices[] = {
+        {point(0.26f, -0.03f), light, {}}, {point(0.7f, -0.03f), light, {}},  {point(0.7f, 0.03f), light, {}},
+        {point(0.26f, 0.03f), light, {}},  {point(-0.05f, -0.03f), dark, {}}, {point(0.26f, -0.03f), dark, {}},
+        {point(0.26f, 0.03f), dark, {}},   {point(-0.05f, 0.03f), dark, {}},
+    };
+    constexpr int headingIndices[] = {0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7};
+    return SDL_RenderGeometry(renderer, nullptr, headingVertices, 8, headingIndices, 12);
+}
+
+bool DrawAgents(SDL_Renderer* renderer, const std::vector<MassMotion::Agent>& agents, const SDL_FRect& gridRect,
+                std::size_t gridWidth)
+{
+    for (const auto& agent : agents)
+    {
+        if (!DrawAgent(renderer, agent, gridRect, gridWidth))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 int RunViewer()
 {
     const std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)> window(
@@ -152,72 +219,84 @@ int RunViewer()
     grid.SetObstacle(3, 5);
     grid.SetObstacle(4, 5);
     MassMotion::GridState state = grid.GetState();
+    std::vector<MassMotion::Agent> agents{{1, 1}, {1, 7}, {1, 12}};
+
+    Uint64 previousTicks = SDL_GetTicksNS();
 
     while (true)
     {
+        const Uint64 ticks = SDL_GetTicksNS();
+        // Avoid a large jump after dragging the window or resuming the application.
+        const double elapsedSeconds = std::min(static_cast<double>(ticks - previousTicks) / 1.0e9, 0.1);
+        previousTicks = ticks;
+        for (auto& agent : agents)
+        {
+            agent.Update(state, elapsedSeconds);
+        }
+
         SDL_FRect gridRect{};
         if (!SDL_SetRenderDrawColor(renderer.get(), 24, 28, 34, 255) || !SDL_RenderClear(renderer.get()) ||
-            !DrawGrid(renderer.get(), state, goalX, goalY, gridRect) || !SDL_RenderPresent(renderer.get()))
+            !DrawGrid(renderer.get(), state, goalX, goalY, gridRect) ||
+            !DrawAgents(renderer.get(), agents, gridRect, state.width) || !SDL_RenderPresent(renderer.get()))
         {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not render frame: %s", SDL_GetError());
             return EXIT_FAILURE;
         }
 
-        // Redraw on events and sleep while idle.
         SDL_Event event;
-        if (!SDL_WaitEvent(&event))
+        while (SDL_PollEvent(&event))
         {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not wait for events: %s", SDL_GetError());
-            return EXIT_FAILURE;
-        }
-
-        if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED ||
-            (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE))
-        {
-            return EXIT_SUCCESS;
-        }
-
-        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
-            (event.button.button == SDL_BUTTON_LEFT || event.button.button == SDL_BUTTON_RIGHT))
-        {
-            SDL_FPoint mouse{};
-            if (!SDL_RenderCoordinatesFromWindow(renderer.get(), event.button.x, event.button.y, &mouse.x, &mouse.y))
+            if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED ||
+                (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE))
             {
-                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not convert mouse coordinates: %s", SDL_GetError());
-                return EXIT_FAILURE;
+                return EXIT_SUCCESS;
             }
 
-            if (mouse.x < gridRect.x || mouse.x >= gridRect.x + gridRect.w || mouse.y < gridRect.y ||
-                mouse.y >= gridRect.y + gridRect.h)
+            if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+                (event.button.button == SDL_BUTTON_LEFT || event.button.button == SDL_BUTTON_RIGHT))
             {
-                continue;
-            }
+                SDL_FPoint mouse{};
+                if (!SDL_RenderCoordinatesFromWindow(renderer.get(), event.button.x, event.button.y, &mouse.x,
+                                                     &mouse.y))
+                {
+                    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not convert mouse coordinates: %s",
+                                 SDL_GetError());
+                    return EXIT_FAILURE;
+                }
 
-            const float cellSize = gridRect.w / static_cast<float>(state.width);
-            const std::size_t x =
-                std::min(static_cast<std::size_t>((mouse.x - gridRect.x) / cellSize), state.width - 1);
-            const std::size_t y =
-                std::min(static_cast<std::size_t>((mouse.y - gridRect.y) / cellSize), state.height - 1);
-            if (event.button.button == SDL_BUTTON_RIGHT)
-            {
-                if (x == goalX && y == goalY)
+                if (gridRect.w <= 0.0f || gridRect.h <= 0.0f || mouse.x < gridRect.x ||
+                    mouse.x >= gridRect.x + gridRect.w || mouse.y < gridRect.y || mouse.y >= gridRect.y + gridRect.h)
                 {
                     continue;
                 }
-                grid.SetObstacle(x, y, !state.obstacles[y * state.width + x]);
-            }
-            else
-            {
-                if (state.obstacles[y * state.width + x])
+
+                const float cellSize = gridRect.w / static_cast<float>(state.width);
+                const std::size_t x =
+                    std::min(static_cast<std::size_t>((mouse.x - gridRect.x) / cellSize), state.width - 1);
+                const std::size_t y =
+                    std::min(static_cast<std::size_t>((mouse.y - gridRect.y) / cellSize), state.height - 1);
+                if (event.button.button == SDL_BUTTON_RIGHT)
                 {
-                    continue;
+                    if (x == goalX && y == goalY)
+                    {
+                        continue;
+                    }
+                    grid.SetObstacle(x, y, !state.obstacles[y * state.width + x]);
                 }
-                grid.SetGoal(x, y);
-                goalX = x;
-                goalY = y;
+                else
+                {
+                    if (state.obstacles[y * state.width + x])
+                    {
+                        continue;
+                    }
+                    grid.SetGoal(x, y);
+                    goalX = x;
+                    goalY = y;
+                }
+                state = grid.GetState();
             }
-            state = grid.GetState();
         }
+        SDL_Delay(16);
     }
 }
 
