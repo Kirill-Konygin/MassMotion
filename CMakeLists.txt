@@ -18,9 +18,15 @@ add_library(MassMotion STATIC
 
 target_include_directories(MassMotion PUBLIC include)
 
+option(MASSMOTION_BUILD_BENCHMARK "Build the simulation benchmark" OFF)
 option(MASSMOTION_ENABLE_PROFILING "Enable scope timing output" OFF)
-if(MASSMOTION_ENABLE_PROFILING)
+if(MASSMOTION_ENABLE_PROFILING OR MASSMOTION_BUILD_BENCHMARK)
     target_compile_definitions(MassMotion PUBLIC MASSMOTION_ENABLE_PROFILING=1)
+endif()
+
+if(MASSMOTION_BUILD_BENCHMARK)
+    add_executable(MassMotionBenchmark benchmarks/SimulationBenchmark.cpp)
+    target_link_libraries(MassMotionBenchmark PRIVATE MassMotion)
 endif()
 
 option(MASSMOTION_BUILD_VIEWER "Build the SDL3 grid viewer" ON)
