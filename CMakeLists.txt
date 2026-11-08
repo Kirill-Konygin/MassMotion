@@ -13,9 +13,15 @@ add_library(MassMotion STATIC
     include/Agent.h
     include/Grid.h
     include/ProximitySearch.h
+    include/ScopeTimer.h
 )
 
 target_include_directories(MassMotion PUBLIC include)
+
+option(MASSMOTION_ENABLE_PROFILING "Enable scope timing output" OFF)
+if(MASSMOTION_ENABLE_PROFILING)
+    target_compile_definitions(MassMotion PUBLIC MASSMOTION_ENABLE_PROFILING=1)
+endif()
 
 option(MASSMOTION_BUILD_VIEWER "Build the SDL3 grid viewer" ON)
 

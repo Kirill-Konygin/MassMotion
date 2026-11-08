@@ -1,5 +1,6 @@
 #include "Agent.h"
 #include "ProximitySearch.h"
+#include "ScopeTimer.h"
 
 #include <algorithm>
 #include <cmath>
@@ -93,6 +94,7 @@ void Agent::UpdateAll(std::span<Agent> agents, const GridState& state, double el
         return;
     }
 
+    MM_PROFILE_SCOPE("Agent::UpdateAll");
     ProximitySearch proximitySearch;
     while (elapsedSeconds > 0.0)
     {
