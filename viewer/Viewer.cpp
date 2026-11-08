@@ -229,10 +229,7 @@ int RunViewer()
         // Avoid a large jump after dragging the window or resuming the application.
         const double elapsedSeconds = std::min(static_cast<double>(ticks - previousTicks) / 1.0e9, 0.1);
         previousTicks = ticks;
-        for (auto& agent : agents)
-        {
-            agent.Update(state, elapsedSeconds);
-        }
+        MassMotion::Agent::UpdateAll(agents, state, elapsedSeconds);
 
         SDL_FRect gridRect{};
         if (!SDL_SetRenderDrawColor(renderer.get(), 24, 28, 34, 255) || !SDL_RenderClear(renderer.get()) ||

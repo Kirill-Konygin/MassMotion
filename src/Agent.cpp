@@ -1,36 +1,77 @@
 #include "Agent.h"
+#include "ProximitySearch.h"
 
 #include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
-#include <utility>
 
 namespace MassMotion
 {
 
-bool CanStep(const GridState& state, std::size_t x, std::size_t y, std::size_t targetX, std::size_t targetY)
+constexpr double steeringResponseTime = 0.2;
+constexpr double flowPredictionTime = 0.15;
+constexpr double separationRadius = 1.0;
+constexpr double separationWeight = 0.8;
+constexpr double maxIntegrationStep = 1.0 / 30.0;
+constexpr double coincidentDistanceSquared = 1.0e-12;
+constexpr double minimumHeadingSpeed = 1.0e-6;
+
+void Limit(double& x, double& y, double maximum)
 {
-    if (x >= state.width || y >= state.height || targetX >= state.width || targetY >= state.height ||
-        state.obstacles[y * state.width + x] || state.obstacles[targetY * state.width + targetX])
+    const double length = std::hypot(x, y);
+    if (length > maximum)
+    {
+        x *= maximum / length;
+        y *= maximum / length;
+    }
+}
+
+bool IsFree(const GridState& state, AgentPosition position)
+{
+    return position.x >= 0.0 && position.y >= 0.0 && position.x < static_cast<double>(state.width) &&
+           position.y < static_cast<double>(state.height) &&
+           !state.obstacles[static_cast<std::size_t>(position.y) * state.width + static_cast<std::size_t>(position.x)];
+}
+
+bool CanMove(const GridState& state, AgentPosition from, AgentPosition to)
+{
+    if (!IsFree(state, from) || !IsFree(state, to))
     {
         return false;
     }
-    return x == targetX || y == targetY ||
-           (!state.obstacles[y * state.width + targetX] && !state.obstacles[targetY * state.width + x]);
+    const auto x = static_cast<std::size_t>(from.x);
+    const auto y = static_cast<std::size_t>(from.y);
+    const auto nextX = static_cast<std::size_t>(to.x);
+    const auto nextY = static_cast<std::size_t>(to.y);
+    return x == nextX || y == nextY ||
+           (!state.obstacles[y * state.width + nextX] && !state.obstacles[nextY * state.width + x]);
 }
 
-std::pair<int, int> CellOffset(Cell cell)
+AgentDirection FlowDirection(const GridState& state, AgentPosition position)
 {
-    static constexpr std::pair<int, int> offsets[] = {
-        {0, 0}, {0, -1}, {1, -1}, {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1},
+    constexpr double diagonal = 1.0 / std::numbers::sqrt2_v<double>;
+    static constexpr AgentDirection directions[] = {
+        {0.0, 0.0},
+        {0.0, -1.0},
+        {diagonal, -diagonal},
+        {1.0, 0.0},
+        {diagonal, diagonal},
+        {0.0, 1.0},
+        {-diagonal, diagonal},
+        {-1.0, 0.0},
+        {-diagonal, -diagonal},
     };
-    return offsets[static_cast<std::size_t>(cell)];
+    const auto cell =
+        state.cells[static_cast<std::size_t>(position.y) * state.width + static_cast<std::size_t>(position.x)];
+    return directions[static_cast<std::size_t>(cell)];
 }
 
-Agent::Agent(std::size_t x, std::size_t y, double speed) : mX(x), mY(y), mTargetX(x), mTargetY(y), mSpeed(speed)
+
+Agent::Agent(std::size_t x, std::size_t y, double maxSpeed)
+    : mPosition{static_cast<double>(x) + 0.5, static_cast<double>(y) + 0.5}, mMaxSpeed(maxSpeed)
 {
-    if (!std::isfinite(speed) || speed <= 0.0)
+    if (!std::isfinite(maxSpeed) || maxSpeed <= 0.0)
     {
         throw std::invalid_argument("Agent speed must be positive and finite");
     }
@@ -38,183 +79,173 @@ Agent::Agent(std::size_t x, std::size_t y, double speed) : mX(x), mY(y), mTarget
 
 void Agent::Update(const GridState& state, double elapsedSeconds)
 {
+    UpdateAll(std::span<Agent>(this, 1), state, elapsedSeconds);
+}
+
+void Agent::UpdateAll(std::span<Agent> agents, const GridState& state, double elapsedSeconds)
+{
     if (!std::isfinite(elapsedSeconds) || elapsedSeconds < 0.0)
     {
         throw std::invalid_argument("Elapsed time must be finite and nonnegative");
     }
-
-    while (true)
+    if (agents.empty())
     {
-        if (!CanStep(state, mX, mY, mTargetX, mTargetY))
-        {
-            mTargetX = mX;
-            mTargetY = mY;
-            mProgress = 0.0;
-            return;
-        }
+        return;
+    }
 
-        if (mX == mTargetX && mY == mTargetY)
-        {
-            const auto [dx, dy] = CellOffset(state.cells[mY * state.width + mX]);
-            if (dx == 0 && dy == 0)
-            {
-                return;
-            }
-
-            if ((dx < 0 && mX == 0) || (dy < 0 && mY == 0) || (dx > 0 && mX == state.width - 1) ||
-                (dy > 0 && mY == state.height - 1))
-            {
-                return;
-            }
-            const std::size_t targetX = dx < 0 ? mX - 1 : (dx > 0 ? mX + 1 : mX);
-            const std::size_t targetY = dy < 0 ? mY - 1 : (dy > 0 ? mY + 1 : mY);
-            if (!CanStep(state, mX, mY, targetX, targetY))
-            {
-                return;
-            }
-            mTargetX = targetX;
-            mTargetY = targetY;
-            PrepareCurve(state);
-        }
-
-        const double secondsToTarget = (mLength - mProgress) / mSpeed;
-        if (elapsedSeconds < secondsToTarget)
-        {
-            mProgress += mSpeed * elapsedSeconds;
-            UpdateHeading(elapsedSeconds);
-            return;
-        }
-
-        mProgress = mLength;
-        UpdateHeading(secondsToTarget);
-        elapsedSeconds = std::max(0.0, elapsedSeconds - secondsToTarget);
-        mX = mTargetX;
-        mY = mTargetY;
-        mProgress = 0.0;
-        if (elapsedSeconds == 0.0)
-        {
-            return;
-        }
+    ProximitySearch proximitySearch;
+    while (elapsedSeconds > 0.0)
+    {
+        const double step = std::min(elapsedSeconds, maxIntegrationStep);
+        SimulateStep(agents, state, proximitySearch, step);
+        elapsedSeconds = std::max(0.0, elapsedSeconds - step);
     }
 }
 
-void Agent::PrepareCurve(const GridState& state)
+void Agent::SimulateStep(std::span<Agent> agents, const GridState& state, ProximitySearch& proximitySearch,
+                         double elapsedSeconds)
 {
-    const double dx = static_cast<double>(mTargetX) - static_cast<double>(mX);
-    const double dy = static_cast<double>(mTargetY) - static_cast<double>(mY);
-    mLength = std::hypot(dx, dy);
-    const AgentDirection forward{dx / mLength, dy / mLength};
-    const AgentDirection startTangent = mHasHeading ? mEndTangent : forward;
-    mEndTangent = forward;
-
-    const auto [nextDX, nextDY] = CellOffset(state.cells[mTargetY * state.width + mTargetX]);
-    if ((nextDX >= 0 || mTargetX > 0) && (nextDY >= 0 || mTargetY > 0) && (nextDX <= 0 || mTargetX < state.width - 1) &&
-        (nextDY <= 0 || mTargetY < state.height - 1))
+    proximitySearch.Update(agents, separationRadius);
+    for (std::size_t i = 0; i < agents.size(); ++i)
     {
-        const std::size_t nextX = nextDX < 0 ? mTargetX - 1 : (nextDX > 0 ? mTargetX + 1 : mTargetX);
-        const std::size_t nextY = nextDY < 0 ? mTargetY - 1 : (nextDY > 0 ? mTargetY + 1 : mTargetY);
-        if ((nextDX != 0 || nextDY != 0) && CanStep(state, mTargetX, mTargetY, nextX, nextY))
+        agents[i].CalculateSteering(state, agents, proximitySearch.GetNeighbors(i));
+    }
+    for (auto& agent : agents)
+    {
+        agent.Integrate(state, elapsedSeconds);
+    }
+}
+
+void Agent::CalculateSteering(const GridState& state, std::span<const Agent> agents,
+                              std::span<const std::size_t> neighbors)
+{
+    mSteeringForce = {};
+    if (!IsFree(state, mPosition))
+    {
+        return;
+    }
+
+    const double maxForce = mMaxSpeed / steeringResponseTime;
+    const auto flowForce = CalculateFlowFollowingForce(state);
+    const auto separationForce = CalculateSeparationForce(agents, neighbors, maxForce);
+    mSteeringForce = {flowForce.x + separationForce.x, flowForce.y + separationForce.y};
+    Limit(mSteeringForce.x, mSteeringForce.y, maxForce);
+}
+
+AgentDirection Agent::GetDesiredFlowDirection(const GridState& state) const
+{
+    auto direction = FlowDirection(state, mPosition);
+    const AgentPosition predicted{mPosition.x + mVelocityX * flowPredictionTime,
+                                  mPosition.y + mVelocityY * flowPredictionTime};
+    if ((direction.x != 0.0 || direction.y != 0.0) && CanMove(state, mPosition, predicted))
+    {
+        const auto predictedDirection = FlowDirection(state, predicted);
+        // Enter the terminal cell before requesting a stop.
+        if (predictedDirection.x != 0.0 || predictedDirection.y != 0.0)
         {
-            const double nextLength = std::hypot(nextDX, nextDY);
-            const double tangentX = forward.x + nextDX / nextLength;
-            const double tangentY = forward.y + nextDY / nextLength;
-            const double tangentLength = std::hypot(tangentX, tangentY);
-            if (tangentLength > 1.0e-9)
-            {
-                mEndTangent = {tangentX / tangentLength, tangentY / tangentLength};
-            }
+            direction = predictedDirection;
         }
     }
+    return direction;
+}
 
-    if (!mHasHeading)
+Agent::SteeringForce Agent::CalculateFlowFollowingForce(const GridState& state) const
+{
+    const auto direction = GetDesiredFlowDirection(state);
+    return {(direction.x * mMaxSpeed - mVelocityX) / steeringResponseTime,
+            (direction.y * mMaxSpeed - mVelocityY) / steeringResponseTime};
+}
+
+Agent::SteeringForce Agent::CalculateSeparationForce(std::span<const Agent> agents,
+                                                     std::span<const std::size_t> neighbors, double maxForce) const
+{
+    SteeringForce repulsion;
+    for (const std::size_t neighborIndex : neighbors)
     {
-        mHeading = std::atan2(forward.y, forward.x);
-        mHasHeading = true;
+        const auto force = CalculateRepulsionFrom(agents[neighborIndex]);
+        repulsion.x += force.x;
+        repulsion.y += force.y;
     }
-    mStraight = std::hypot(startTangent.x - forward.x, startTangent.y - forward.y) < 1.0e-9 &&
-                std::hypot(mEndTangent.x - forward.x, mEndTangent.y - forward.y) < 1.0e-9;
-    // All control points stay within 0.2 cells of the centers. Together with the
-    // viewer's 0.28-cell radius, the curve fits inside the step's free cells.
-    constexpr double handleLength = 0.2;
-    mControl1 = {static_cast<double>(mX) + 0.5 + startTangent.x * handleLength,
-                 static_cast<double>(mY) + 0.5 + startTangent.y * handleLength};
-    mControl2 = {static_cast<double>(mTargetX) + 0.5 - mEndTangent.x * handleLength,
-                 static_cast<double>(mTargetY) + 0.5 - mEndTangent.y * handleLength};
-    if (!mStraight)
+    return {repulsion.x * separationWeight * maxForce, repulsion.y * separationWeight * maxForce};
+}
+
+Agent::SteeringForce Agent::CalculateRepulsionFrom(const Agent& neighbor) const
+{
+    const double dx = mPosition.x - neighbor.mPosition.x;
+    const double dy = mPosition.y - neighbor.mPosition.y;
+    const double distanceSquared = dx * dx + dy * dy;
+    if (distanceSquared < coincidentDistanceSquared)
     {
-        // Approximate arc length so curved movement keeps the same speed.
-        mDistances[0] = 0.0;
-        auto previous = EvaluateCurve(0.0);
-        for (std::size_t i = 1; i <= CurveSamples; ++i)
-        {
-            const auto point = EvaluateCurve(static_cast<double>(i) / CurveSamples);
-            mDistances[i] = mDistances[i - 1] + std::hypot(point.x - previous.x, point.y - previous.y);
-            previous = point;
-        }
-        mLength = mDistances.back();
+        // Give coincident pairs opposite forces without dividing by zero.
+        return {this < &neighbor ? -1.0 : 1.0, 0.0};
+    }
+    // Normalized offset weighted by 1 / distance, as in Reynolds' separation.
+    return {dx / distanceSquared, dy / distanceSquared};
+}
+
+void Agent::Integrate(const GridState& state, double elapsedSeconds)
+{
+    if (!IsFree(state, mPosition))
+    {
+        mVelocityX = 0.0;
+        mVelocityY = 0.0;
+        return;
+    }
+
+    ApplySteering(elapsedSeconds);
+    Move(state, elapsedSeconds);
+    UpdateHeading();
+}
+
+void Agent::ApplySteering(double elapsedSeconds)
+{
+    // Unit mass: acceleration equals the combined, limited steering force.
+    mVelocityX += mSteeringForce.x * elapsedSeconds;
+    mVelocityY += mSteeringForce.y * elapsedSeconds;
+    Limit(mVelocityX, mVelocityY, mMaxSpeed);
+}
+
+void Agent::Move(const GridState& state, double elapsedSeconds)
+{
+    const AgentPosition next{mPosition.x + mVelocityX * elapsedSeconds, mPosition.y + mVelocityY * elapsedSeconds};
+    if (CanMove(state, mPosition, next))
+    {
+        mPosition = next;
+    }
+    else
+    {
+        SlideAlongObstacles(state, next);
     }
 }
 
-double Agent::CurveParameter() const
+void Agent::SlideAlongObstacles(const GridState& state, AgentPosition next)
 {
-    if (mStraight)
+    const AgentPosition nextX{next.x, mPosition.y};
+    if (CanMove(state, mPosition, nextX))
     {
-        return std::clamp(mProgress / mLength, 0.0, 1.0);
+        mPosition.x = next.x;
     }
-    const auto upper = std::upper_bound(mDistances.begin(), mDistances.end(), mProgress);
-    if (upper == mDistances.end())
+    else
     {
-        return 1.0;
+        mVelocityX = 0.0;
     }
-    const auto index = static_cast<std::size_t>(upper - mDistances.begin());
-    const double fraction = (mProgress - mDistances[index - 1]) / (mDistances[index] - mDistances[index - 1]);
-    return (static_cast<double>(index - 1) + fraction) / CurveSamples;
-}
-
-AgentPosition Agent::EvaluateCurve(double t) const
-{
-    const double startX = static_cast<double>(mX) + 0.5;
-    const double startY = static_cast<double>(mY) + 0.5;
-    const double endX = static_cast<double>(mTargetX) + 0.5;
-    const double endY = static_cast<double>(mTargetY) + 0.5;
-    if (mStraight)
+    const AgentPosition nextY{mPosition.x, next.y};
+    if (CanMove(state, mPosition, nextY))
     {
-        return {startX + (endX - startX) * t, startY + (endY - startY) * t};
+        mPosition.y = next.y;
     }
-    const double u = 1.0 - t;
-    return {u * u * u * startX + 3.0 * u * u * t * mControl1.x + 3.0 * u * t * t * mControl2.x + t * t * t * endX,
-            u * u * u * startY + 3.0 * u * u * t * mControl1.y + 3.0 * u * t * t * mControl2.y + t * t * t * endY};
-}
-
-void Agent::UpdateHeading(double elapsedSeconds)
-{
-    const double t = CurveParameter();
-    const double u = 1.0 - t;
-    double dx = static_cast<double>(mTargetX) - static_cast<double>(mX);
-    double dy = static_cast<double>(mTargetY) - static_cast<double>(mY);
-    if (!mStraight)
+    else
     {
-        dx = u * u * (mControl1.x - static_cast<double>(mX) - 0.5) + 2.0 * u * t * (mControl2.x - mControl1.x) +
-             t * t * (static_cast<double>(mTargetX) + 0.5 - mControl2.x);
-        dy = u * u * (mControl1.y - static_cast<double>(mY) - 0.5) + 2.0 * u * t * (mControl2.y - mControl1.y) +
-             t * t * (static_cast<double>(mTargetY) + 0.5 - mControl2.y);
-    }
-    if (std::hypot(dx, dy) > 1.0e-9)
-    {
-        constexpr double fullTurn = 2.0 * std::numbers::pi_v<double>;
-        const double difference = std::remainder(std::atan2(dy, dx) - mHeading, fullTurn);
-        const double maxTurn = fullTurn * elapsedSeconds;
-        mHeading = std::remainder(mHeading + std::clamp(difference, -maxTurn, maxTurn), fullTurn);
+        mVelocityY = 0.0;
     }
 }
 
-AgentPosition Agent::GetPosition() const
+void Agent::UpdateHeading()
 {
-    if (mX == mTargetX && mY == mTargetY)
+    if (std::hypot(mVelocityX, mVelocityY) > minimumHeadingSpeed)
     {
-        return {static_cast<double>(mX) + 0.5, static_cast<double>(mY) + 0.5};
+        mHeading = std::atan2(mVelocityY, mVelocityX);
     }
-    return EvaluateCurve(CurveParameter());
 }
 
 AgentDirection Agent::GetDirection() const

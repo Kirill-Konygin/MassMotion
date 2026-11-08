@@ -3,7 +3,7 @@
 
 #include "Grid.h"
 
-#include <array>
+#include <span>
 
 namespace MassMotion
 {
@@ -20,44 +20,61 @@ struct AgentDirection
     double y;
 };
 
+class ProximitySearch;
+
 class Agent
 {
   public:
-    // Position is a cell coordinate; speed is in cells per second and must be positive and finite.
-    Agent(std::size_t x, std::size_t y, double speed = 3.0);
+    // Position is a cell coordinate; speed is the maximum speed in cells per second and must be positive and finite.
+    Agent(std::size_t x, std::size_t y, double maxSpeed = 3.0);
 
-    // Follows arrows between cell centers with rounded turns, stopping at Cell::None or a blocked step.
-    // New directions take effect at the next cell center. Elapsed time must be finite and nonnegative.
-    // The state must be a snapshot from Grid. If an active step becomes blocked, return to its start.
+    // Updates a single agent using flow-field steering. Cell::None requests zero velocity.
+    // The state must be a snapshot from Grid. Elapsed time must be finite and nonnegative.
     void Update(const GridState& state, double elapsedSeconds);
 
-    // Grid-space position: the center of cell (0, 0) is (0.5, 0.5).
-    [[nodiscard]] AgentPosition GetPosition() const;
+    // Combines flow following and separation using cached neighbor lists.
+    // Forces are calculated for all agents before any positions are updated.
+    static void UpdateAll(std::span<Agent> agents, const GridState& state, double elapsedSeconds);
 
-    // Unit facing vector. Rotation is limited to one full turn per second.
+    // Grid-space position: the center of cell (0, 0) is (0.5, 0.5).
+    [[nodiscard]] AgentPosition GetPosition() const
+    {
+        return mPosition;
+    }
+
+    // Unit facing vector aligned with velocity; the last direction is kept while stopped.
     [[nodiscard]] AgentDirection GetDirection() const;
 
   private:
-    void PrepareCurve(const GridState& state);
-    void UpdateHeading(double elapsedSeconds);
-    [[nodiscard]] double CurveParameter() const;
-    [[nodiscard]] AgentPosition EvaluateCurve(double parameter) const;
+    struct SteeringForce
+    {
+        double x = 0.0;
+        double y = 0.0;
+    };
 
-    static constexpr std::size_t CurveSamples = 128;
-    std::size_t mX;
-    std::size_t mY;
-    std::size_t mTargetX;
-    std::size_t mTargetY;
-    double mSpeed;
-    double mProgress = 0.0;
-    double mLength = 1.0;
+    static void SimulateStep(std::span<Agent> agents, const GridState& state, ProximitySearch& proximitySearch,
+                             double elapsedSeconds);
+
+    void CalculateSteering(const GridState& state, std::span<const Agent> agents,
+                           std::span<const std::size_t> neighbors);
+    [[nodiscard]] AgentDirection GetDesiredFlowDirection(const GridState& state) const;
+    [[nodiscard]] SteeringForce CalculateFlowFollowingForce(const GridState& state) const;
+    [[nodiscard]] SteeringForce CalculateSeparationForce(std::span<const Agent> agents,
+                                                         std::span<const std::size_t> neighbors, double maxForce) const;
+    [[nodiscard]] SteeringForce CalculateRepulsionFrom(const Agent& neighbor) const;
+
+    void Integrate(const GridState& state, double elapsedSeconds);
+    void ApplySteering(double elapsedSeconds);
+    void Move(const GridState& state, double elapsedSeconds);
+    void SlideAlongObstacles(const GridState& state, AgentPosition next);
+    void UpdateHeading();
+
+    AgentPosition mPosition;
+    double mMaxSpeed;
+    double mVelocityX = 0.0;
+    double mVelocityY = 0.0;
+    SteeringForce mSteeringForce;
     double mHeading = 0.0;
-    bool mHasHeading = false;
-    bool mStraight = true;
-    AgentDirection mEndTangent{1.0, 0.0};
-    AgentPosition mControl1{};
-    AgentPosition mControl2{};
-    std::array<double, CurveSamples + 1> mDistances{};
 };
 
 } // namespace MassMotion
