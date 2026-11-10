@@ -10,17 +10,17 @@
 namespace MassMotion
 {
 
-constexpr double steeringResponseTime = 0.2;
-constexpr double flowPredictionTime = 0.15;
-constexpr double separationRadius = 1.0;
-constexpr double separationWeight = 0.8;
-constexpr double maxIntegrationStep = 1.0 / 30.0;
-constexpr double coincidentDistanceSquared = 1.0e-12;
-constexpr double minimumHeadingSpeed = 1.0e-6;
+constexpr float steeringResponseTime = 0.2f;
+constexpr float flowPredictionTime = 0.15f;
+constexpr float separationRadius = 1.0f;
+constexpr float separationWeight = 0.8f;
+constexpr float maxIntegrationStep = 1.0f / 30.0f;
+constexpr float coincidentDistanceSquared = 1.0e-12f;
+constexpr float minimumHeadingSpeed = 1.0e-6f;
 
-void Limit(double& x, double& y, double maximum)
+void Limit(float& x, float& y, float maximum)
 {
-    const double length = std::hypot(x, y);
+    const float length = std::hypot(x, y);
     if (length > maximum)
     {
         x *= maximum / length;
@@ -30,8 +30,8 @@ void Limit(double& x, double& y, double maximum)
 
 bool IsFree(const GridState& state, AgentPosition position)
 {
-    return position.x >= 0.0 && position.y >= 0.0 && position.x < static_cast<double>(state.width) &&
-           position.y < static_cast<double>(state.height) &&
+    return position.x >= 0.0f && position.y >= 0.0f && position.x < static_cast<float>(state.width) &&
+           position.y < static_cast<float>(state.height) &&
            !state.obstacles[static_cast<std::size_t>(position.y) * state.width + static_cast<std::size_t>(position.x)];
 }
 
@@ -51,17 +51,10 @@ bool CanMove(const GridState& state, AgentPosition from, AgentPosition to)
 
 AgentDirection FlowDirection(const GridState& state, AgentPosition position)
 {
-    constexpr double diagonal = 1.0 / std::numbers::sqrt2_v<double>;
+    constexpr float diagonal = 1.0f / std::numbers::sqrt2_v<float>;
     static constexpr AgentDirection directions[] = {
-        {0.0, 0.0},
-        {0.0, -1.0},
-        {diagonal, -diagonal},
-        {1.0, 0.0},
-        {diagonal, diagonal},
-        {0.0, 1.0},
-        {-diagonal, diagonal},
-        {-1.0, 0.0},
-        {-diagonal, -diagonal},
+        {0.0f, 0.0f}, {0.0f, -1.0f},         {diagonal, -diagonal}, {1.0f, 0.0f},           {diagonal, diagonal},
+        {0.0f, 1.0f}, {-diagonal, diagonal}, {-1.0f, 0.0f},         {-diagonal, -diagonal},
     };
     const auto cell =
         state.cells[static_cast<std::size_t>(position.y) * state.width + static_cast<std::size_t>(position.x)];
@@ -73,21 +66,21 @@ void Agents::Reserve(std::size_t capacity)
     mAgents.reserve(capacity);
 }
 
-std::size_t Agents::Add(std::size_t x, std::size_t y, double maxSpeed)
+std::size_t Agents::Add(std::size_t x, std::size_t y, float maxSpeed)
 {
-    if (!std::isfinite(maxSpeed) || maxSpeed <= 0.0)
+    if (!std::isfinite(maxSpeed) || maxSpeed <= 0.0f)
     {
         throw std::invalid_argument("Agent speed must be positive and finite");
     }
 
     const std::size_t agentIndex = mAgents.size();
-    mAgents.push_back({{static_cast<double>(x) + 0.5, static_cast<double>(y) + 0.5}, maxSpeed});
+    mAgents.push_back({{static_cast<float>(x) + 0.5f, static_cast<float>(y) + 0.5f}, maxSpeed});
     return agentIndex;
 }
 
-void Agents::Update(const GridState& state, double elapsedSeconds)
+void Agents::Update(const GridState& state, float elapsedSeconds)
 {
-    if (!std::isfinite(elapsedSeconds) || elapsedSeconds < 0.0)
+    if (!std::isfinite(elapsedSeconds) || elapsedSeconds < 0.0f)
     {
         throw std::invalid_argument("Elapsed time must be finite and nonnegative");
     }
@@ -97,15 +90,15 @@ void Agents::Update(const GridState& state, double elapsedSeconds)
     }
 
     ProximitySearch proximitySearch;
-    while (elapsedSeconds > 0.0)
+    while (elapsedSeconds > 0.0f)
     {
-        const double step = std::min(elapsedSeconds, maxIntegrationStep);
+        const float step = std::min(elapsedSeconds, maxIntegrationStep);
         SimulateStep(state, proximitySearch, step);
-        elapsedSeconds = std::max(0.0, elapsedSeconds - step);
+        elapsedSeconds = std::max(0.0f, elapsedSeconds - step);
     }
 }
 
-void Agents::SimulateStep(const GridState& state, ProximitySearch& proximitySearch, double elapsedSeconds)
+void Agents::SimulateStep(const GridState& state, ProximitySearch& proximitySearch, float elapsedSeconds)
 {
     proximitySearch.Update(*this, separationRadius);
     MM_PROFILE_SCOPE("Agents::SimulateStep");
@@ -124,7 +117,7 @@ void Agents::CalculateSteering(const GridState& state, const ProximitySearch& pr
             continue;
         }
 
-        const double maxForce = agent.maxSpeed / steeringResponseTime;
+        const float maxForce = agent.maxSpeed / steeringResponseTime;
         const auto flowForce = CalculateFlowFollowingForce(agent, state);
         const auto separationForce = CalculateSeparationForce(agent, proximitySearch.GetNeighbors(i), maxForce);
         agent.steeringForce = {flowForce.x + separationForce.x, flowForce.y + separationForce.y};
@@ -137,11 +130,11 @@ AgentDirection Agents::GetDesiredFlowDirection(const State& agent, const GridSta
     auto direction = FlowDirection(state, agent.position);
     const AgentPosition predicted{agent.position.x + agent.velocityX * flowPredictionTime,
                                   agent.position.y + agent.velocityY * flowPredictionTime};
-    if ((direction.x != 0.0 || direction.y != 0.0) && CanMove(state, agent.position, predicted))
+    if ((direction.x != 0.0f || direction.y != 0.0f) && CanMove(state, agent.position, predicted))
     {
         const auto predictedDirection = FlowDirection(state, predicted);
         // Enter the terminal cell before requesting a stop.
-        if (predictedDirection.x != 0.0 || predictedDirection.y != 0.0)
+        if (predictedDirection.x != 0.0f || predictedDirection.y != 0.0f)
         {
             direction = predictedDirection;
         }
@@ -157,7 +150,7 @@ Agents::SteeringForce Agents::CalculateFlowFollowingForce(const State& agent, co
 }
 
 Agents::SteeringForce Agents::CalculateSeparationForce(const State& agent, std::span<const std::size_t> neighbors,
-                                                       double maxForce) const
+                                                       float maxForce) const
 {
     SteeringForce repulsion;
     for (const std::size_t neighborIndex : neighbors)
@@ -171,33 +164,33 @@ Agents::SteeringForce Agents::CalculateSeparationForce(const State& agent, std::
 
 Agents::SteeringForce Agents::CalculateRepulsionFrom(const State& agent, const State& neighbor)
 {
-    const double dx = agent.position.x - neighbor.position.x;
-    const double dy = agent.position.y - neighbor.position.y;
-    const double distanceSquared = dx * dx + dy * dy;
+    const float dx = agent.position.x - neighbor.position.x;
+    const float dy = agent.position.y - neighbor.position.y;
+    const float distanceSquared = dx * dx + dy * dy;
     if (distanceSquared < coincidentDistanceSquared)
     {
         // Give coincident pairs opposite forces without dividing by zero.
-        return {&agent < &neighbor ? -1.0 : 1.0, 0.0};
+        return {&agent < &neighbor ? -1.0f : 1.0f, 0.0f};
     }
     // Normalized offset weighted by 1 / distance, as in Reynolds' separation.
     return {dx / distanceSquared, dy / distanceSquared};
 }
 
-void Agents::Integrate(const GridState& state, double elapsedSeconds)
+void Agents::Integrate(const GridState& state, float elapsedSeconds)
 {
     ApplySteering(state, elapsedSeconds);
     Move(state, elapsedSeconds);
     UpdateHeading();
 }
 
-void Agents::ApplySteering(const GridState& state, double elapsedSeconds)
+void Agents::ApplySteering(const GridState& state, float elapsedSeconds)
 {
     for (auto& agent : mAgents)
     {
         if (!IsFree(state, agent.position))
         {
-            agent.velocityX = 0.0;
-            agent.velocityY = 0.0;
+            agent.velocityX = 0.0f;
+            agent.velocityY = 0.0f;
             continue;
         }
 
@@ -207,7 +200,7 @@ void Agents::ApplySteering(const GridState& state, double elapsedSeconds)
     }
 }
 
-void Agents::Move(const GridState& state, double elapsedSeconds)
+void Agents::Move(const GridState& state, float elapsedSeconds)
 {
     for (auto& agent : mAgents)
     {
@@ -238,7 +231,7 @@ void Agents::SlideAlongObstacles(State& agent, const GridState& state, AgentPosi
     }
     else
     {
-        agent.velocityX = 0.0;
+        agent.velocityX = 0.0f;
     }
     const AgentPosition nextY{agent.position.x, next.y};
     if (CanMove(state, agent.position, nextY))
@@ -247,7 +240,7 @@ void Agents::SlideAlongObstacles(State& agent, const GridState& state, AgentPosi
     }
     else
     {
-        agent.velocityY = 0.0;
+        agent.velocityY = 0.0f;
     }
 }
 
@@ -264,7 +257,7 @@ void Agents::UpdateHeading()
 
 AgentDirection Agents::GetDirection(std::size_t agentIndex) const
 {
-    const double heading = mAgents[agentIndex].heading;
+    const float heading = mAgents[agentIndex].heading;
     return {std::cos(heading), std::sin(heading)};
 }
 

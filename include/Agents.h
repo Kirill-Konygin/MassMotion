@@ -12,14 +12,14 @@ namespace MassMotion
 
 struct AgentPosition
 {
-    double x;
-    double y;
+    float x;
+    float y;
 };
 
 struct AgentDirection
 {
-    double x;
-    double y;
+    float x;
+    float y;
 };
 
 class ProximitySearch;
@@ -30,11 +30,11 @@ class Agents
     void Reserve(std::size_t capacity);
 
     // Speed is measured in grid cells per second.
-    std::size_t Add(std::size_t x, std::size_t y, double maxSpeed = 3.0);
+    std::size_t Add(std::size_t x, std::size_t y, float maxSpeed = 3.0f);
 
     // Separation uses positions from the start of each simulation step.
     // Cell::None requests zero flow velocity.
-    void Update(const GridState& state, double elapsedSeconds);
+    void Update(const GridState& state, float elapsedSeconds);
 
     [[nodiscard]] std::size_t GetCount() const
     {
@@ -53,32 +53,32 @@ class Agents
   private:
     struct SteeringForce
     {
-        double x = 0.0;
-        double y = 0.0;
+        float x = 0.0f;
+        float y = 0.0f;
     };
 
     struct State
     {
         AgentPosition position;
-        double maxSpeed;
-        double velocityX = 0.0;
-        double velocityY = 0.0;
+        float maxSpeed;
+        float velocityX = 0.0f;
+        float velocityY = 0.0f;
         SteeringForce steeringForce{};
-        double heading = 0.0;
+        float heading = 0.0f;
     };
 
-    void SimulateStep(const GridState& state, ProximitySearch& proximitySearch, double elapsedSeconds);
+    void SimulateStep(const GridState& state, ProximitySearch& proximitySearch, float elapsedSeconds);
 
     void CalculateSteering(const GridState& state, const ProximitySearch& proximitySearch);
     [[nodiscard]] static AgentDirection GetDesiredFlowDirection(const State& agent, const GridState& state);
     [[nodiscard]] static SteeringForce CalculateFlowFollowingForce(const State& agent, const GridState& state);
     [[nodiscard]] SteeringForce CalculateSeparationForce(const State& agent, std::span<const std::size_t> neighbors,
-                                                         double maxForce) const;
+                                                         float maxForce) const;
     [[nodiscard]] static SteeringForce CalculateRepulsionFrom(const State& agent, const State& neighbor);
 
-    void Integrate(const GridState& state, double elapsedSeconds);
-    void ApplySteering(const GridState& state, double elapsedSeconds);
-    void Move(const GridState& state, double elapsedSeconds);
+    void Integrate(const GridState& state, float elapsedSeconds);
+    void ApplySteering(const GridState& state, float elapsedSeconds);
+    void Move(const GridState& state, float elapsedSeconds);
     static void SlideAlongObstacles(State& agent, const GridState& state, AgentPosition next);
     void UpdateHeading();
 
