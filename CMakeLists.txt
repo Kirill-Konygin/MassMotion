@@ -14,6 +14,7 @@ add_library(MassMotion STATIC
     include/Grid.h
     include/ProximitySearch.h
     include/ScopeTimer.h
+    include/Vector2.h
 )
 
 target_include_directories(MassMotion PUBLIC include)

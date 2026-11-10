@@ -18,24 +18,24 @@ constexpr float maxIntegrationStep = 1.0f / 30.0f;
 constexpr float coincidentDistanceSquared = 1.0e-12f;
 constexpr float minimumHeadingSpeed = 1.0e-6f;
 
-void Limit(float& x, float& y, float maximum)
+void Limit(Vector2& vector, float maximum)
 {
-    const float length = std::hypot(x, y);
+    const float length = std::hypot(vector.x, vector.y);
     if (length > maximum)
     {
-        x *= maximum / length;
-        y *= maximum / length;
+        vector.x *= maximum / length;
+        vector.y *= maximum / length;
     }
 }
 
-bool IsFree(const GridState& state, AgentPosition position)
+bool IsFree(const GridState& state, Vector2 position)
 {
     return position.x >= 0.0f && position.y >= 0.0f && position.x < static_cast<float>(state.width) &&
            position.y < static_cast<float>(state.height) &&
            !state.obstacles[static_cast<std::size_t>(position.y) * state.width + static_cast<std::size_t>(position.x)];
 }
 
-bool CanMove(const GridState& state, AgentPosition from, AgentPosition to)
+bool CanMove(const GridState& state, Vector2 from, Vector2 to)
 {
     if (!IsFree(state, from) || !IsFree(state, to))
     {
@@ -49,10 +49,10 @@ bool CanMove(const GridState& state, AgentPosition from, AgentPosition to)
            (!state.obstacles[y * state.width + nextX] && !state.obstacles[nextY * state.width + x]);
 }
 
-AgentDirection FlowDirection(const GridState& state, AgentPosition position)
+Vector2 FlowDirection(const GridState& state, Vector2 position)
 {
     constexpr float diagonal = 1.0f / std::numbers::sqrt2_v<float>;
-    static constexpr AgentDirection directions[] = {
+    static constexpr Vector2 directions[] = {
         {0.0f, 0.0f}, {0.0f, -1.0f},         {diagonal, -diagonal}, {1.0f, 0.0f},           {diagonal, diagonal},
         {0.0f, 1.0f}, {-diagonal, diagonal}, {-1.0f, 0.0f},         {-diagonal, -diagonal},
     };
@@ -121,15 +121,15 @@ void Agents::CalculateSteering(const GridState& state, const ProximitySearch& pr
         const auto flowForce = CalculateFlowFollowingForce(agent, state);
         const auto separationForce = CalculateSeparationForce(agent, proximitySearch.GetNeighbors(i), maxForce);
         agent.steeringForce = {flowForce.x + separationForce.x, flowForce.y + separationForce.y};
-        Limit(agent.steeringForce.x, agent.steeringForce.y, maxForce);
+        Limit(agent.steeringForce, maxForce);
     }
 }
 
-AgentDirection Agents::GetDesiredFlowDirection(const State& agent, const GridState& state)
+Vector2 Agents::GetDesiredFlowDirection(const State& agent, const GridState& state)
 {
     auto direction = FlowDirection(state, agent.position);
-    const AgentPosition predicted{agent.position.x + agent.velocityX * flowPredictionTime,
-                                  agent.position.y + agent.velocityY * flowPredictionTime};
+    const Vector2 predicted{agent.position.x + agent.velocity.x * flowPredictionTime,
+                            agent.position.y + agent.velocity.y * flowPredictionTime};
     if ((direction.x != 0.0f || direction.y != 0.0f) && CanMove(state, agent.position, predicted))
     {
         const auto predictedDirection = FlowDirection(state, predicted);
@@ -142,17 +142,17 @@ AgentDirection Agents::GetDesiredFlowDirection(const State& agent, const GridSta
     return direction;
 }
 
-Agents::SteeringForce Agents::CalculateFlowFollowingForce(const State& agent, const GridState& state)
+Vector2 Agents::CalculateFlowFollowingForce(const State& agent, const GridState& state)
 {
     const auto direction = GetDesiredFlowDirection(agent, state);
-    return {(direction.x * agent.maxSpeed - agent.velocityX) / steeringResponseTime,
-            (direction.y * agent.maxSpeed - agent.velocityY) / steeringResponseTime};
+    return {(direction.x * agent.maxSpeed - agent.velocity.x) / steeringResponseTime,
+            (direction.y * agent.maxSpeed - agent.velocity.y) / steeringResponseTime};
 }
 
-Agents::SteeringForce Agents::CalculateSeparationForce(const State& agent, std::span<const std::size_t> neighbors,
-                                                       float maxForce) const
+Vector2 Agents::CalculateSeparationForce(const State& agent, std::span<const std::size_t> neighbors,
+                                         float maxForce) const
 {
-    SteeringForce repulsion;
+    Vector2 repulsion;
     for (const std::size_t neighborIndex : neighbors)
     {
         const auto force = CalculateRepulsionFrom(agent, mAgents[neighborIndex]);
@@ -162,7 +162,7 @@ Agents::SteeringForce Agents::CalculateSeparationForce(const State& agent, std::
     return {repulsion.x * separationWeight * maxForce, repulsion.y * separationWeight * maxForce};
 }
 
-Agents::SteeringForce Agents::CalculateRepulsionFrom(const State& agent, const State& neighbor)
+Vector2 Agents::CalculateRepulsionFrom(const State& agent, const State& neighbor)
 {
     const float dx = agent.position.x - neighbor.position.x;
     const float dy = agent.position.y - neighbor.position.y;
@@ -189,14 +189,13 @@ void Agents::ApplySteering(const GridState& state, float elapsedSeconds)
     {
         if (!IsFree(state, agent.position))
         {
-            agent.velocityX = 0.0f;
-            agent.velocityY = 0.0f;
+            agent.velocity = {};
             continue;
         }
 
-        agent.velocityX += agent.steeringForce.x * elapsedSeconds;
-        agent.velocityY += agent.steeringForce.y * elapsedSeconds;
-        Limit(agent.velocityX, agent.velocityY, agent.maxSpeed);
+        agent.velocity.x += agent.steeringForce.x * elapsedSeconds;
+        agent.velocity.y += agent.steeringForce.y * elapsedSeconds;
+        Limit(agent.velocity, agent.maxSpeed);
     }
 }
 
@@ -209,8 +208,8 @@ void Agents::Move(const GridState& state, float elapsedSeconds)
             continue;
         }
 
-        const AgentPosition next{agent.position.x + agent.velocityX * elapsedSeconds,
-                                 agent.position.y + agent.velocityY * elapsedSeconds};
+        const Vector2 next{agent.position.x + agent.velocity.x * elapsedSeconds,
+                           agent.position.y + agent.velocity.y * elapsedSeconds};
         if (CanMove(state, agent.position, next))
         {
             agent.position = next;
@@ -222,25 +221,25 @@ void Agents::Move(const GridState& state, float elapsedSeconds)
     }
 }
 
-void Agents::SlideAlongObstacles(State& agent, const GridState& state, AgentPosition next)
+void Agents::SlideAlongObstacles(State& agent, const GridState& state, Vector2 next)
 {
-    const AgentPosition nextX{next.x, agent.position.y};
+    const Vector2 nextX{next.x, agent.position.y};
     if (CanMove(state, agent.position, nextX))
     {
         agent.position.x = next.x;
     }
     else
     {
-        agent.velocityX = 0.0f;
+        agent.velocity.x = 0.0f;
     }
-    const AgentPosition nextY{agent.position.x, next.y};
+    const Vector2 nextY{agent.position.x, next.y};
     if (CanMove(state, agent.position, nextY))
     {
         agent.position.y = next.y;
     }
     else
     {
-        agent.velocityY = 0.0f;
+        agent.velocity.y = 0.0f;
     }
 }
 
@@ -248,14 +247,14 @@ void Agents::UpdateHeading()
 {
     for (auto& agent : mAgents)
     {
-        if (std::hypot(agent.velocityX, agent.velocityY) > minimumHeadingSpeed)
+        if (std::hypot(agent.velocity.x, agent.velocity.y) > minimumHeadingSpeed)
         {
-            agent.heading = std::atan2(agent.velocityY, agent.velocityX);
+            agent.heading = std::atan2(agent.velocity.y, agent.velocity.x);
         }
     }
 }
 
-AgentDirection Agents::GetDirection(std::size_t agentIndex) const
+Vector2 Agents::GetDirection(std::size_t agentIndex) const
 {
     const float heading = mAgents[agentIndex].heading;
     return {std::cos(heading), std::sin(heading)};

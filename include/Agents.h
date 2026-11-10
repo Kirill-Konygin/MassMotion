@@ -2,6 +2,7 @@
 #define MASSMOTION_AGENTS_H
 
 #include "Grid.h"
+#include "Vector2.h"
 
 #include <cstddef>
 #include <span>
@@ -9,18 +10,6 @@
 
 namespace MassMotion
 {
-
-struct AgentPosition
-{
-    float x;
-    float y;
-};
-
-struct AgentDirection
-{
-    float x;
-    float y;
-};
 
 class ProximitySearch;
 
@@ -42,44 +31,37 @@ class Agents
     }
 
     // Grid-space position: the center of cell (0, 0) is (0.5, 0.5).
-    [[nodiscard]] AgentPosition GetPosition(std::size_t agentIndex) const
+    [[nodiscard]] Vector2 GetPosition(std::size_t agentIndex) const
     {
         return mAgents[agentIndex].position;
     }
 
     // The last facing direction is kept while stopped.
-    [[nodiscard]] AgentDirection GetDirection(std::size_t agentIndex) const;
+    [[nodiscard]] Vector2 GetDirection(std::size_t agentIndex) const;
 
   private:
-    struct SteeringForce
-    {
-        float x = 0.0f;
-        float y = 0.0f;
-    };
-
     struct State
     {
-        AgentPosition position;
+        Vector2 position;
         float maxSpeed;
-        float velocityX = 0.0f;
-        float velocityY = 0.0f;
-        SteeringForce steeringForce{};
         float heading = 0.0f;
+        Vector2 velocity{};
+        Vector2 steeringForce{};
     };
 
     void SimulateStep(const GridState& state, ProximitySearch& proximitySearch, float elapsedSeconds);
 
     void CalculateSteering(const GridState& state, const ProximitySearch& proximitySearch);
-    [[nodiscard]] static AgentDirection GetDesiredFlowDirection(const State& agent, const GridState& state);
-    [[nodiscard]] static SteeringForce CalculateFlowFollowingForce(const State& agent, const GridState& state);
-    [[nodiscard]] SteeringForce CalculateSeparationForce(const State& agent, std::span<const std::size_t> neighbors,
-                                                         float maxForce) const;
-    [[nodiscard]] static SteeringForce CalculateRepulsionFrom(const State& agent, const State& neighbor);
+    [[nodiscard]] static Vector2 GetDesiredFlowDirection(const State& agent, const GridState& state);
+    [[nodiscard]] static Vector2 CalculateFlowFollowingForce(const State& agent, const GridState& state);
+    [[nodiscard]] Vector2 CalculateSeparationForce(const State& agent, std::span<const std::size_t> neighbors,
+                                                   float maxForce) const;
+    [[nodiscard]] static Vector2 CalculateRepulsionFrom(const State& agent, const State& neighbor);
 
     void Integrate(const GridState& state, float elapsedSeconds);
     void ApplySteering(const GridState& state, float elapsedSeconds);
     void Move(const GridState& state, float elapsedSeconds);
-    static void SlideAlongObstacles(State& agent, const GridState& state, AgentPosition next);
+    static void SlideAlongObstacles(State& agent, const GridState& state, Vector2 next);
     void UpdateHeading();
 
     std::vector<State> mAgents;

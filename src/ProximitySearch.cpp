@@ -8,7 +8,7 @@
 namespace MassMotion
 {
 
-bool IsWithinRadius(AgentPosition first, AgentPosition second, double radiusSquared)
+bool IsWithinRadius(Vector2 first, Vector2 second, double radiusSquared)
 {
     const double dx = first.x - second.x;
     const double dy = first.y - second.y;
