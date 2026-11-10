@@ -84,24 +84,28 @@ void Agents::Update(const GridState& state, float elapsedSeconds)
     {
         throw std::invalid_argument("Elapsed time must be finite and nonnegative");
     }
-    if (mAgents.empty())
+    if (mAgents.empty() || elapsedSeconds == 0.0f)
     {
         return;
     }
 
-    ProximitySearch proximitySearch;
+    if (!mProximitySearch || !mProximitySearch->MatchesGridSize(state.width, state.height))
+    {
+        mProximitySearch.emplace(separationRadius, state.width, state.height);
+    }
     while (elapsedSeconds > 0.0f)
     {
         const float step = std::min(elapsedSeconds, maxIntegrationStep);
-        SimulateStep(state, proximitySearch, step);
+        SimulateStep(state, *mProximitySearch, step);
         elapsedSeconds = std::max(0.0f, elapsedSeconds - step);
     }
 }
 
 void Agents::SimulateStep(const GridState& state, ProximitySearch& proximitySearch, float elapsedSeconds)
 {
-    proximitySearch.Update(*this, separationRadius);
     MM_PROFILE_SCOPE("Agents::SimulateStep");
+    proximitySearch.Update(*this);
+
     CalculateSteering(state, proximitySearch);
     Integrate(state, elapsedSeconds);
 }

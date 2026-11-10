@@ -2,16 +2,16 @@
 #define MASSMOTION_AGENTS_H
 
 #include "Grid.h"
+#include "ProximitySearch.h"
 #include "Vector2.h"
 
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <vector>
 
 namespace MassMotion
 {
-
-class ProximitySearch;
 
 class Agents
 {
@@ -65,6 +65,7 @@ class Agents
     void UpdateHeading();
 
     std::vector<State> mAgents;
+    std::optional<ProximitySearch> mProximitySearch;
 };
 
 } // namespace MassMotion

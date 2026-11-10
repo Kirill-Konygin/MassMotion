@@ -13,10 +13,15 @@ class Agents;
 class ProximitySearch
 {
   public:
-    // Rebuilds all neighbor lists with a naive O(n^2) search, checking each pair once.
-    // Neighbors are strictly within radius; an agent never includes itself.
-    // Radius must be finite and nonnegative. Rebuild after agent positions or order change.
-    void Update(const Agents& agents, double radius);
+    // Dimensions use the same units as agent positions and must be positive.
+    // Radius must be finite and nonnegative.
+    ProximitySearch(double radius, std::size_t width, std::size_t height);
+
+    [[nodiscard]] bool MatchesGridSize(std::size_t width, std::size_t height) const;
+
+    // Neighbors are strictly within radius, sorted by index; an agent never includes itself.
+    // Rebuild after agent positions or order change.
+    void Update(const Agents& agents);
 
     // Returns cached indices into the agents passed to Update, without repeating the search.
     // The view remains valid until the next Update or destruction of this object.
@@ -27,14 +32,22 @@ class ProximitySearch
     }
 
   private:
+    using GridCell = std::vector<std::size_t>;
+
     void ResetNeighborLists(std::size_t agentCount);
-    void FindNeighborPairs(const Agents& agents, double radiusSquared);
+    void UpdateGrid(const Agents& agents);
+    [[nodiscard]] std::span<const std::size_t> BroadPhase(std::size_t cellX, std::size_t cellY);
+    void NarrowPhase(const Agents& agents, std::span<const std::size_t> cell, std::span<const std::size_t> candidates);
 
     void AddNeighbor(std::size_t agentIndex, std::size_t neighborIndex)
     {
         mNeighbors[agentIndex].push_back(neighborIndex);
     }
 
+    double mRadiusSquared;
+    double mCellSize;
+    std::vector<std::vector<GridCell>> mGrid;
+    std::vector<std::size_t> mCandidates;
     std::vector<std::vector<std::size_t>> mNeighbors;
 };
 
