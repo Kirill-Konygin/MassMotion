@@ -10,6 +10,8 @@
 namespace MassMotion
 {
 
+constexpr std::size_t chunkSize = 128;
+
 std::size_t GridDimension(std::size_t extent, double cellSize)
 {
     const double count = std::max(1.0, std::ceil(static_cast<double>(extent) / cellSize));
@@ -20,6 +22,12 @@ std::size_t GridDimension(std::size_t extent, double cellSize)
     return static_cast<std::size_t>(count);
 }
 
+std::size_t GridCoordinate(float position, double cellSize, std::size_t cellCount)
+{
+    return static_cast<std::size_t>(
+        std::clamp(static_cast<double>(position) / cellSize, 0.0, static_cast<double>(cellCount - 1)));
+}
+
 bool IsWithinRadius(Vector2 first, Vector2 second, double radiusSquared)
 {
     const double dx = first.x - second.x;
@@ -27,7 +35,8 @@ bool IsWithinRadius(Vector2 first, Vector2 second, double radiusSquared)
     return dx * dx + dy * dy < radiusSquared;
 }
 
-ProximitySearch::ProximitySearch(double radius, std::size_t width, std::size_t height) : mRadiusSquared(radius * radius)
+ProximitySearch::ProximitySearch(double radius, std::size_t width, std::size_t height, std::size_t workerCount)
+    : mRadiusSquared(radius * radius)
 {
     if (!std::isfinite(radius) || radius < 0.0)
     {
@@ -37,6 +46,10 @@ ProximitySearch::ProximitySearch(double radius, std::size_t width, std::size_t h
     {
         throw std::invalid_argument("Proximity grid dimensions must be positive");
     }
+    if (workerCount == 0)
+    {
+        throw std::invalid_argument("Proximity worker count must be positive");
+    }
 
     // Cover rounding in the float coordinate subtraction used by the narrow phase.
     mCellSize = std::max(1.0, radius * (1.0 + 2.0 * std::numeric_limits<float>::epsilon()));
@@ -45,6 +58,13 @@ ProximitySearch::ProximitySearch(double radius, std::size_t width, std::size_t h
     for (auto& row : mGrid)
     {
         row.resize(columns);
+    }
+
+    mWorkerContexts.resize(workerCount);
+    for (std::size_t i = 0; i < workerCount; ++i)
+    {
+        mWorkerContexts[i].firstChunk = i;
+        mWorkerContexts[i].chunkStride = workerCount;
     }
 }
 
@@ -56,30 +76,17 @@ bool ProximitySearch::MatchesGridSize(std::size_t width, std::size_t height) con
 
 void ProximitySearch::Update(const Agents& agents)
 {
-    ResetNeighborLists(agents.GetCount());
-    if (agents.GetCount() < 2 || mRadiusSquared == 0.0)
+    const std::size_t agentCount = agents.GetCount();
+    ResetNeighborLists(agentCount);
+    if (agentCount < 2 || mRadiusSquared == 0.0)
     {
         return;
     }
 
     UpdateGrid(agents);
-    for (std::size_t y = 0; y < mGrid.size(); ++y)
+    for (auto& context : mWorkerContexts)
     {
-        for (std::size_t x = 0; x < mGrid[y].size(); ++x)
-        {
-            const auto& cell = mGrid[y][x];
-            if (!cell.empty())
-            {
-                const auto candidates = BroadPhase(x, y);
-                NarrowPhase(agents, cell, candidates);
-            }
-        }
-    }
-
-    // Preserve the separation force accumulation order.
-    for (auto& neighbors : mNeighbors)
-    {
-        std::sort(neighbors.begin(), neighbors.end());
+        ProcessWorker(agents, context);
     }
 }
 
@@ -110,17 +117,46 @@ void ProximitySearch::UpdateGrid(const Agents& agents)
             continue;
         }
         // Border cells also hold outside agents; exact distances still use their original positions.
-        const auto x = static_cast<std::size_t>(std::clamp(static_cast<double>(position.x) / mCellSize, 0.0,
-                                                           static_cast<double>(mGrid.front().size() - 1)));
-        const auto y = static_cast<std::size_t>(
-            std::clamp(static_cast<double>(position.y) / mCellSize, 0.0, static_cast<double>(mGrid.size() - 1)));
+        const std::size_t x = GridCoordinate(position.x, mCellSize, mGrid.front().size());
+        const std::size_t y = GridCoordinate(position.y, mCellSize, mGrid.size());
         mGrid[y][x].push_back(i);
     }
 }
 
-std::span<const std::size_t> ProximitySearch::BroadPhase(std::size_t cellX, std::size_t cellY)
+void ProximitySearch::ProcessWorker(const Agents& agents, WorkerContext& context)
 {
-    mCandidates.clear();
+    const std::size_t agentCount = agents.GetCount();
+    const std::size_t chunkCount = (agentCount + chunkSize - 1) / chunkSize;
+    for (std::size_t chunk = context.firstChunk; chunk < chunkCount; chunk += context.chunkStride)
+    {
+        const std::size_t begin = chunk * chunkSize;
+        const std::size_t end = std::min(begin + chunkSize, agentCount);
+        ProcessChunk(agents, begin, end, context);
+    }
+}
+
+void ProximitySearch::ProcessChunk(const Agents& agents, std::size_t begin, std::size_t end, WorkerContext& context)
+{
+    for (std::size_t i = begin; i < end; ++i)
+    {
+        const auto position = agents.GetPosition(i);
+        if (!std::isfinite(position.x) || !std::isfinite(position.y))
+        {
+            continue;
+        }
+
+        const std::size_t x = GridCoordinate(position.x, mCellSize, mGrid.front().size());
+        const std::size_t y = GridCoordinate(position.y, mCellSize, mGrid.size());
+        const auto candidates = BroadPhase(x, y, context);
+        NarrowPhase(agents, i, candidates);
+    }
+}
+
+std::span<const std::size_t> ProximitySearch::BroadPhase(std::size_t cellX, std::size_t cellY,
+                                                         WorkerContext& context) const
+{
+    auto& candidates = context.candidates;
+    candidates.clear();
     const std::size_t firstX = cellX == 0 ? 0 : cellX - 1;
     const std::size_t firstY = cellY == 0 ? 0 : cellY - 1;
     const std::size_t lastX = std::min(cellX + 1, mGrid.front().size() - 1);
@@ -130,27 +166,26 @@ std::span<const std::size_t> ProximitySearch::BroadPhase(std::size_t cellX, std:
         for (std::size_t x = firstX; x <= lastX; ++x)
         {
             const auto& cell = mGrid[y][x];
-            mCandidates.insert(mCandidates.end(), cell.begin(), cell.end());
+            candidates.insert(candidates.end(), cell.begin(), cell.end());
         }
     }
-    return mCandidates;
+    return candidates;
 }
 
-void ProximitySearch::NarrowPhase(const Agents& agents, std::span<const std::size_t> cell,
-                                  std::span<const std::size_t> candidates)
+void ProximitySearch::NarrowPhase(const Agents& agents, std::size_t agentIndex, std::span<const std::size_t> candidates)
 {
-    for (const std::size_t i : cell)
+    const auto position = agents.GetPosition(agentIndex);
+    auto& neighbors = mNeighbors[agentIndex];
+    for (const std::size_t j : candidates)
     {
-        const auto position = agents.GetPosition(i);
-        for (const std::size_t j : candidates)
+        if (j != agentIndex && IsWithinRadius(position, agents.GetPosition(j), mRadiusSquared))
         {
-            if (j > i && IsWithinRadius(position, agents.GetPosition(j), mRadiusSquared))
-            {
-                AddNeighbor(i, j);
-                AddNeighbor(j, i);
-            }
+            neighbors.push_back(j);
         }
     }
+
+    // Preserve the separation force accumulation order.
+    std::sort(neighbors.begin(), neighbors.end());
 }
 
 } // namespace MassMotion

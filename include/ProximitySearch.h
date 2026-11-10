@@ -14,8 +14,8 @@ class ProximitySearch
 {
   public:
     // Dimensions use the same units as agent positions and must be positive.
-    // Radius must be finite and nonnegative.
-    ProximitySearch(double radius, std::size_t width, std::size_t height);
+    // Radius must be finite and nonnegative; workerCount must be positive.
+    ProximitySearch(double radius, std::size_t width, std::size_t height, std::size_t workerCount = 4);
 
     [[nodiscard]] bool MatchesGridSize(std::size_t width, std::size_t height) const;
 
@@ -34,20 +34,25 @@ class ProximitySearch
   private:
     using GridCell = std::vector<std::size_t>;
 
+    struct WorkerContext
+    {
+        std::size_t firstChunk = 0;
+        std::size_t chunkStride = 1;
+        std::vector<std::size_t> candidates;
+    };
+
     void ResetNeighborLists(std::size_t agentCount);
     void UpdateGrid(const Agents& agents);
-    [[nodiscard]] std::span<const std::size_t> BroadPhase(std::size_t cellX, std::size_t cellY);
-    void NarrowPhase(const Agents& agents, std::span<const std::size_t> cell, std::span<const std::size_t> candidates);
-
-    void AddNeighbor(std::size_t agentIndex, std::size_t neighborIndex)
-    {
-        mNeighbors[agentIndex].push_back(neighborIndex);
-    }
+    void ProcessWorker(const Agents& agents, WorkerContext& context);
+    void ProcessChunk(const Agents& agents, std::size_t begin, std::size_t end, WorkerContext& context);
+    [[nodiscard]] std::span<const std::size_t> BroadPhase(std::size_t cellX, std::size_t cellY,
+                                                          WorkerContext& context) const;
+    void NarrowPhase(const Agents& agents, std::size_t agentIndex, std::span<const std::size_t> candidates);
 
     double mRadiusSquared;
     double mCellSize;
     std::vector<std::vector<GridCell>> mGrid;
-    std::vector<std::size_t> mCandidates;
+    std::vector<WorkerContext> mWorkerContexts;
     std::vector<std::vector<std::size_t>> mNeighbors;
 };
 
