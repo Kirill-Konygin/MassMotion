@@ -1,4 +1,4 @@
-#include "Agent.h"
+#include "Agents.h"
 #include "Grid.h"
 
 #include <SDL3/SDL.h>
@@ -129,7 +129,8 @@ bool DrawGrid(SDL_Renderer* renderer, const MassMotion::GridState& state, std::s
     return true;
 }
 
-bool DrawAgent(SDL_Renderer* renderer, const MassMotion::Agent& agent, const SDL_FRect& gridRect, std::size_t gridWidth)
+bool DrawAgent(SDL_Renderer* renderer, const MassMotion::Agents& agents, std::size_t agentIndex,
+               const SDL_FRect& gridRect, std::size_t gridWidth)
 {
     if (gridRect.w <= 0.0f)
     {
@@ -137,7 +138,7 @@ bool DrawAgent(SDL_Renderer* renderer, const MassMotion::Agent& agent, const SDL
     }
 
     const float cellSize = gridRect.w / static_cast<float>(gridWidth);
-    const auto position = agent.GetPosition();
+    const auto position = agents.GetPosition(agentIndex);
     const SDL_FPoint center = {gridRect.x + static_cast<float>(position.x) * cellSize,
                                gridRect.y + static_cast<float>(position.y) * cellSize};
     constexpr int segments = 32;
@@ -160,7 +161,7 @@ bool DrawAgent(SDL_Renderer* renderer, const MassMotion::Agent& agent, const SDL
         return false;
     }
 
-    const auto direction = agent.GetDirection();
+    const auto direction = agents.GetDirection(agentIndex);
     const SDL_FPoint forward{static_cast<float>(direction.x), static_cast<float>(direction.y)};
     const SDL_FPoint side{-forward.y, forward.x};
     const auto point = [&](float along, float across)
@@ -179,12 +180,12 @@ bool DrawAgent(SDL_Renderer* renderer, const MassMotion::Agent& agent, const SDL
     return SDL_RenderGeometry(renderer, nullptr, headingVertices, 8, headingIndices, 12);
 }
 
-bool DrawAgents(SDL_Renderer* renderer, const std::vector<MassMotion::Agent>& agents, const SDL_FRect& gridRect,
+bool DrawAgents(SDL_Renderer* renderer, const MassMotion::Agents& agents, const SDL_FRect& gridRect,
                 std::size_t gridWidth)
 {
-    for (const auto& agent : agents)
+    for (std::size_t i = 0; i < agents.GetCount(); ++i)
     {
-        if (!DrawAgent(renderer, agent, gridRect, gridWidth))
+        if (!DrawAgent(renderer, agents, i, gridRect, gridWidth))
         {
             return false;
         }
@@ -219,7 +220,10 @@ int RunViewer()
     grid.SetObstacle(3, 5);
     grid.SetObstacle(4, 5);
     MassMotion::GridState state = grid.GetState();
-    std::vector<MassMotion::Agent> agents{{1, 1}, {1, 7}, {1, 12}};
+    MassMotion::Agents agents;
+    agents.Add(1, 1);
+    agents.Add(1, 7);
+    agents.Add(1, 12);
 
     Uint64 previousTicks = SDL_GetTicksNS();
 
@@ -229,7 +233,7 @@ int RunViewer()
         // Avoid a large jump after dragging the window or resuming the application.
         const double elapsedSeconds = std::min(static_cast<double>(ticks - previousTicks) / 1.0e9, 0.1);
         previousTicks = ticks;
-        MassMotion::Agent::UpdateAll(agents, state, elapsedSeconds);
+        agents.Update(state, elapsedSeconds);
 
         SDL_FRect gridRect{};
         if (!SDL_SetRenderDrawColor(renderer.get(), 24, 28, 34, 255) || !SDL_RenderClear(renderer.get()) ||

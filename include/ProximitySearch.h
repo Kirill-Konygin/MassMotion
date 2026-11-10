@@ -8,7 +8,7 @@
 namespace MassMotion
 {
 
-class Agent;
+class Agents;
 
 class ProximitySearch
 {
@@ -16,7 +16,7 @@ class ProximitySearch
     // Rebuilds all neighbor lists with a naive O(n^2) search, checking each pair once.
     // Neighbors are strictly within radius; an agent never includes itself.
     // Radius must be finite and nonnegative. Rebuild after agent positions or order change.
-    void Update(std::span<const Agent> agents, double radius);
+    void Update(const Agents& agents, double radius);
 
     // Returns cached indices into the agents passed to Update, without repeating the search.
     // The view remains valid until the next Update or destruction of this object.
@@ -28,7 +28,7 @@ class ProximitySearch
 
   private:
     void ResetNeighborLists(std::size_t agentCount);
-    void FindNeighborPairs(std::span<const Agent> agents, double radiusSquared);
+    void FindNeighborPairs(const Agents& agents, double radiusSquared);
 
     void AddNeighbor(std::size_t agentIndex, std::size_t neighborIndex)
     {

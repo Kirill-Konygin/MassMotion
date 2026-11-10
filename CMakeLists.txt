@@ -7,10 +7,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(MassMotion STATIC
-    src/Agent.cpp
+    src/Agents.cpp
     src/Grid.cpp
     src/ProximitySearch.cpp
-    include/Agent.h
+    include/Agents.h
     include/Grid.h
     include/ProximitySearch.h
     include/ScopeTimer.h

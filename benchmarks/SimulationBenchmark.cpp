@@ -1,4 +1,4 @@
-#include "Agent.h"
+#include "Agents.h"
 #include "Grid.h"
 
 #include <chrono>
@@ -13,8 +13,8 @@
 constexpr std::size_t gridWidth = 256;
 constexpr std::size_t gridHeight = 256;
 constexpr std::size_t agentCount = 512;
-constexpr std::size_t stepCount = 3;
-// Matching the integration limit makes UpdateAll execute exactly one SimulateStep.
+constexpr std::size_t stepCount = 30;
+// Matching the integration limit makes Update execute exactly one SimulateStep.
 constexpr double elapsedSeconds = 1.0 / 30.0;
 
 MassMotion::Grid CreateGrid()
@@ -34,16 +34,16 @@ MassMotion::Grid CreateGrid()
     return grid;
 }
 
-std::vector<MassMotion::Agent> CreateAgents()
+MassMotion::Agents CreateAgents()
 {
     constexpr std::size_t columns = 32;
     constexpr std::size_t origin = 8;
     constexpr std::size_t spacing = 2;
-    std::vector<MassMotion::Agent> agents;
-    agents.reserve(agentCount);
+    MassMotion::Agents agents;
+    agents.Reserve(agentCount);
     for (std::size_t i = 0; i < agentCount; ++i)
     {
-        agents.emplace_back(origin + i % columns * spacing, origin + i / columns * spacing);
+        agents.Add(origin + i % columns * spacing, origin + i / columns * spacing);
     }
     return agents;
 }
@@ -58,7 +58,7 @@ int main()
         MM_PROFILE_SCOPE("All");
         for (std::size_t step = 0; step < stepCount; ++step)
         {
-            MassMotion::Agent::UpdateAll(agents, state, elapsedSeconds);
+            agents.Update(state, elapsedSeconds);
         }
     }
 
