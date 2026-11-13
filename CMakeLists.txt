@@ -6,18 +6,23 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+find_package(Threads REQUIRED)
+
 add_library(MassMotion STATIC
     src/Agents.cpp
     src/Grid.cpp
     src/ProximitySearch.cpp
+    src/ThreadPool.cpp
     include/Agents.h
     include/Grid.h
     include/ProximitySearch.h
     include/ScopeTimer.h
+    include/ThreadPool.h
     include/Vector2.h
 )
 
 target_include_directories(MassMotion PUBLIC include)
+target_link_libraries(MassMotion PUBLIC Threads::Threads)
 
 option(MASSMOTION_BUILD_BENCHMARK "Build the simulation benchmark" OFF)
 option(MASSMOTION_ENABLE_PROFILING "Enable scope timing output" OFF)
