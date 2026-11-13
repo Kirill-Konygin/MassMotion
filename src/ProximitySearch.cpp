@@ -1,6 +1,7 @@
 #include "ProximitySearch.h"
 
 #include "Agents.h"
+#include "ThreadPool.h"
 
 #include <algorithm>
 #include <cmath>
@@ -35,7 +36,7 @@ bool IsWithinRadius(Vector2 first, Vector2 second, double radiusSquared)
     return dx * dx + dy * dy < radiusSquared;
 }
 
-ProximitySearch::ProximitySearch(double radius, std::size_t width, std::size_t height, std::size_t workerCount)
+ProximitySearch::ProximitySearch(double radius, std::size_t width, std::size_t height)
     : mRadiusSquared(radius * radius)
 {
     if (!std::isfinite(radius) || radius < 0.0)
@@ -46,10 +47,6 @@ ProximitySearch::ProximitySearch(double radius, std::size_t width, std::size_t h
     {
         throw std::invalid_argument("Proximity grid dimensions must be positive");
     }
-    if (workerCount == 0)
-    {
-        throw std::invalid_argument("Proximity worker count must be positive");
-    }
 
     // Cover rounding in the float coordinate subtraction used by the narrow phase.
     mCellSize = std::max(1.0, radius * (1.0 + 2.0 * std::numeric_limits<float>::epsilon()));
@@ -59,13 +56,6 @@ ProximitySearch::ProximitySearch(double radius, std::size_t width, std::size_t h
     {
         row.resize(columns);
     }
-
-    mWorkerContexts.resize(workerCount);
-    for (std::size_t i = 0; i < workerCount; ++i)
-    {
-        mWorkerContexts[i].firstChunk = i;
-        mWorkerContexts[i].chunkStride = workerCount;
-    }
 }
 
 bool ProximitySearch::MatchesGridSize(std::size_t width, std::size_t height) const
@@ -74,7 +64,7 @@ bool ProximitySearch::MatchesGridSize(std::size_t width, std::size_t height) con
            mGrid.front().size() == GridDimension(width, mCellSize);
 }
 
-void ProximitySearch::Update(const Agents& agents)
+void ProximitySearch::Update(const Agents& agents, ThreadPool& threadPool)
 {
     const std::size_t agentCount = agents.GetCount();
     ResetNeighborLists(agentCount);
@@ -84,10 +74,18 @@ void ProximitySearch::Update(const Agents& agents)
     }
 
     UpdateGrid(agents);
-    for (auto& context : mWorkerContexts)
+    const std::size_t chunkCount = (agentCount + chunkSize - 1) / chunkSize;
+    for (std::size_t chunk = 0; chunk < chunkCount; ++chunk)
     {
-        ProcessWorker(agents, context);
+        threadPool.Enqueue([this, &agents, chunk]
+        {
+            thread_local WorkerContext context;
+            const std::size_t begin = chunk * chunkSize;
+            const std::size_t end = std::min(begin + chunkSize, agents.GetCount());
+            ProcessChunk(agents, begin, end, context);
+        });
     }
+    threadPool.Wait();
 }
 
 void ProximitySearch::ResetNeighborLists(std::size_t agentCount)
@@ -120,18 +118,6 @@ void ProximitySearch::UpdateGrid(const Agents& agents)
         const std::size_t x = GridCoordinate(position.x, mCellSize, mGrid.front().size());
         const std::size_t y = GridCoordinate(position.y, mCellSize, mGrid.size());
         mGrid[y][x].push_back(i);
-    }
-}
-
-void ProximitySearch::ProcessWorker(const Agents& agents, WorkerContext& context)
-{
-    const std::size_t agentCount = agents.GetCount();
-    const std::size_t chunkCount = (agentCount + chunkSize - 1) / chunkSize;
-    for (std::size_t chunk = context.firstChunk; chunk < chunkCount; chunk += context.chunkStride)
-    {
-        const std::size_t begin = chunk * chunkSize;
-        const std::size_t end = std::min(begin + chunkSize, agentCount);
-        ProcessChunk(agents, begin, end, context);
     }
 }
 

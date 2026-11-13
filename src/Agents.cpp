@@ -78,7 +78,7 @@ std::size_t Agents::Add(std::size_t x, std::size_t y, float maxSpeed)
     return agentIndex;
 }
 
-void Agents::Update(const GridState& state, float elapsedSeconds)
+void Agents::Update(const GridState& state, float elapsedSeconds, ThreadPool& threadPool)
 {
     if (!std::isfinite(elapsedSeconds) || elapsedSeconds < 0.0f)
     {
@@ -96,15 +96,16 @@ void Agents::Update(const GridState& state, float elapsedSeconds)
     while (elapsedSeconds > 0.0f)
     {
         const float step = std::min(elapsedSeconds, maxIntegrationStep);
-        SimulateStep(state, *mProximitySearch, step);
+        SimulateStep(state, *mProximitySearch, step, threadPool);
         elapsedSeconds = std::max(0.0f, elapsedSeconds - step);
     }
 }
 
-void Agents::SimulateStep(const GridState& state, ProximitySearch& proximitySearch, float elapsedSeconds)
+void Agents::SimulateStep(const GridState& state, ProximitySearch& proximitySearch, float elapsedSeconds,
+                          ThreadPool& threadPool)
 {
     MM_PROFILE_SCOPE("Agents::SimulateStep");
-    proximitySearch.Update(*this);
+    proximitySearch.Update(*this, threadPool);
 
     CalculateSteering(state, proximitySearch);
     Integrate(state, elapsedSeconds);

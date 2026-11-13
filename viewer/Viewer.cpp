@@ -1,5 +1,6 @@
 #include "Agents.h"
 #include "Grid.h"
+#include "ThreadPool.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -220,6 +221,7 @@ int RunViewer()
     grid.SetObstacle(3, 5);
     grid.SetObstacle(4, 5);
     MassMotion::GridState state = grid.GetState();
+    MassMotion::ThreadPool threadPool;
     MassMotion::Agents agents;
     agents.Add(1, 1);
     agents.Add(1, 7);
@@ -233,7 +235,7 @@ int RunViewer()
         // Avoid a large jump after dragging the window or resuming the application.
         const double elapsedSeconds = std::min(static_cast<double>(ticks - previousTicks) / 1.0e9, 0.1);
         previousTicks = ticks;
-        agents.Update(state, elapsedSeconds);
+        agents.Update(state, elapsedSeconds, threadPool);
 
         SDL_FRect gridRect{};
         if (!SDL_SetRenderDrawColor(renderer.get(), 24, 28, 34, 255) || !SDL_RenderClear(renderer.get()) ||

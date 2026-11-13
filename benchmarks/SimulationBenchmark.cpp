@@ -1,5 +1,6 @@
 #include "Agents.h"
 #include "Grid.h"
+#include "ThreadPool.h"
 
 #include <chrono>
 #include <cstddef>
@@ -52,13 +53,14 @@ int main()
 {
     const auto grid = CreateGrid();
     const auto state = grid.GetState();
+    MassMotion::ThreadPool threadPool;
     auto agents = CreateAgents();
     
     {
         MM_PROFILE_SCOPE("All");
         for (std::size_t step = 0; step < stepCount; ++step)
         {
-            agents.Update(state, elapsedSeconds);
+            agents.Update(state, elapsedSeconds, threadPool);
         }
     }
 

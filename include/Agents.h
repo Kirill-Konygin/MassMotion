@@ -13,6 +13,8 @@
 namespace MassMotion
 {
 
+class ThreadPool;
+
 class Agents
 {
   public:
@@ -23,7 +25,7 @@ class Agents
 
     // Separation uses positions from the start of each simulation step.
     // Cell::None requests zero flow velocity.
-    void Update(const GridState& state, float elapsedSeconds);
+    void Update(const GridState& state, float elapsedSeconds, ThreadPool& threadPool);
 
     [[nodiscard]] std::size_t GetCount() const
     {
@@ -49,7 +51,8 @@ class Agents
         Vector2 steeringForce{};
     };
 
-    void SimulateStep(const GridState& state, ProximitySearch& proximitySearch, float elapsedSeconds);
+    void SimulateStep(const GridState& state, ProximitySearch& proximitySearch, float elapsedSeconds,
+                      ThreadPool& threadPool);
 
     void CalculateSteering(const GridState& state, const ProximitySearch& proximitySearch);
     [[nodiscard]] static Vector2 GetDesiredFlowDirection(const State& agent, const GridState& state);
