@@ -1,6 +1,7 @@
 #include "Agents.h"
 #include "ProximitySearch.h"
 #include "ScopeTimer.h"
+#include "ThreadPool.h"
 
 #include <algorithm>
 #include <cmath>
@@ -10,6 +11,7 @@
 namespace MassMotion
 {
 
+constexpr std::size_t chunkSize = 1024;
 constexpr float steeringResponseTime = 0.2f;
 constexpr float flowPredictionTime = 0.15f;
 constexpr float separationRadius = 1.0f;
@@ -107,13 +109,35 @@ void Agents::SimulateStep(const GridState& state, ProximitySearch& proximitySear
     MM_PROFILE_SCOPE("Agents::SimulateStep");
     proximitySearch.Update(*this, threadPool);
 
-    CalculateSteering(state, proximitySearch);
-    Integrate(state, elapsedSeconds);
+    const std::size_t chunkCount = (mAgents.size() + chunkSize - 1) / chunkSize;
+    for (std::size_t chunk = 0; chunk < chunkCount; ++chunk)
+    {
+        threadPool.Enqueue([this, &state, &proximitySearch, chunk]
+        {
+            const std::size_t begin = chunk * chunkSize;
+            const std::size_t end = std::min(begin + chunkSize, mAgents.size());
+            CalculateSteering(state, proximitySearch, begin, end);
+        });
+    }
+    // Separation reads neighbor positions; finish every steering task before moving agents.
+    threadPool.Wait();
+
+    for (std::size_t chunk = 0; chunk < chunkCount; ++chunk)
+    {
+        threadPool.Enqueue([this, &state, elapsedSeconds, chunk]
+        {
+            const std::size_t begin = chunk * chunkSize;
+            const std::size_t end = std::min(begin + chunkSize, mAgents.size());
+            Integrate(state, elapsedSeconds, begin, end);
+        });
+    }
+    threadPool.Wait();
 }
 
-void Agents::CalculateSteering(const GridState& state, const ProximitySearch& proximitySearch)
+void Agents::CalculateSteering(const GridState& state, const ProximitySearch& proximitySearch,
+                               std::size_t begin, std::size_t end)
 {
-    for (std::size_t i = 0; i < mAgents.size(); ++i)
+    for (std::size_t i = begin; i < end; ++i)
     {
         auto& agent = mAgents[i];
         agent.steeringForce = {};
@@ -181,17 +205,18 @@ Vector2 Agents::CalculateRepulsionFrom(const State& agent, const State& neighbor
     return {dx / distanceSquared, dy / distanceSquared};
 }
 
-void Agents::Integrate(const GridState& state, float elapsedSeconds)
+void Agents::Integrate(const GridState& state, float elapsedSeconds, std::size_t begin, std::size_t end)
 {
-    ApplySteering(state, elapsedSeconds);
-    Move(state, elapsedSeconds);
-    UpdateHeading();
+    ApplySteering(state, elapsedSeconds, begin, end);
+    Move(state, elapsedSeconds, begin, end);
+    UpdateHeading(begin, end);
 }
 
-void Agents::ApplySteering(const GridState& state, float elapsedSeconds)
+void Agents::ApplySteering(const GridState& state, float elapsedSeconds, std::size_t begin, std::size_t end)
 {
-    for (auto& agent : mAgents)
+    for (std::size_t i = begin; i < end; ++i)
     {
+        auto& agent = mAgents[i];
         if (!IsFree(state, agent.position))
         {
             agent.velocity = {};
@@ -204,10 +229,11 @@ void Agents::ApplySteering(const GridState& state, float elapsedSeconds)
     }
 }
 
-void Agents::Move(const GridState& state, float elapsedSeconds)
+void Agents::Move(const GridState& state, float elapsedSeconds, std::size_t begin, std::size_t end)
 {
-    for (auto& agent : mAgents)
+    for (std::size_t i = begin; i < end; ++i)
     {
+        auto& agent = mAgents[i];
         if (!IsFree(state, agent.position))
         {
             continue;
@@ -248,10 +274,11 @@ void Agents::SlideAlongObstacles(State& agent, const GridState& state, Vector2 n
     }
 }
 
-void Agents::UpdateHeading()
+void Agents::UpdateHeading(std::size_t begin, std::size_t end)
 {
-    for (auto& agent : mAgents)
+    for (std::size_t i = begin; i < end; ++i)
     {
+        auto& agent = mAgents[i];
         if (std::hypot(agent.velocity.x, agent.velocity.y) > minimumHeadingSpeed)
         {
             agent.heading = std::atan2(agent.velocity.y, agent.velocity.x);

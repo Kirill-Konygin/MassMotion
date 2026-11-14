@@ -54,18 +54,19 @@ class Agents
     void SimulateStep(const GridState& state, ProximitySearch& proximitySearch, float elapsedSeconds,
                       ThreadPool& threadPool);
 
-    void CalculateSteering(const GridState& state, const ProximitySearch& proximitySearch);
+    void CalculateSteering(const GridState& state, const ProximitySearch& proximitySearch,
+                           std::size_t begin, std::size_t end);
     [[nodiscard]] static Vector2 GetDesiredFlowDirection(const State& agent, const GridState& state);
     [[nodiscard]] static Vector2 CalculateFlowFollowingForce(const State& agent, const GridState& state);
     [[nodiscard]] Vector2 CalculateSeparationForce(const State& agent, std::span<const std::size_t> neighbors,
                                                    float maxForce) const;
     [[nodiscard]] static Vector2 CalculateRepulsionFrom(const State& agent, const State& neighbor);
 
-    void Integrate(const GridState& state, float elapsedSeconds);
-    void ApplySteering(const GridState& state, float elapsedSeconds);
-    void Move(const GridState& state, float elapsedSeconds);
+    void Integrate(const GridState& state, float elapsedSeconds, std::size_t begin, std::size_t end);
+    void ApplySteering(const GridState& state, float elapsedSeconds, std::size_t begin, std::size_t end);
+    void Move(const GridState& state, float elapsedSeconds, std::size_t begin, std::size_t end);
     static void SlideAlongObstacles(State& agent, const GridState& state, Vector2 next);
-    void UpdateHeading();
+    void UpdateHeading(std::size_t begin, std::size_t end);
 
     std::vector<State> mAgents;
     std::optional<ProximitySearch> mProximitySearch;
