@@ -26,7 +26,7 @@ target_link_libraries(MassMotion PUBLIC Threads::Threads)
 
 option(MASSMOTION_BUILD_BENCHMARK "Build the simulation benchmark" OFF)
 option(MASSMOTION_ENABLE_PROFILING "Enable scope timing output" OFF)
-if(MASSMOTION_ENABLE_PROFILING OR MASSMOTION_BUILD_BENCHMARK)
+if(MASSMOTION_ENABLE_PROFILING)
     target_compile_definitions(MassMotion PUBLIC MASSMOTION_ENABLE_PROFILING=1)
 endif()
 
