@@ -13,6 +13,89 @@
 #include <numbers>
 #include <vector>
 
+constexpr float minimumDetailCellSize = 8.0f;
+
+struct ViewerScene
+{
+    MassMotion::Grid grid;
+    MassMotion::Agents agents;
+    std::size_t goalX;
+    std::size_t goalY;
+    const char* title;
+};
+
+ViewerScene CreateSmallScene()
+{
+    ViewerScene scene{MassMotion::Grid(20, 14), {}, 10, 7,
+                      "MassMotion - 3 agents | 1: small, 2: crowd"};
+    scene.grid.SetObstacle(2, 5);
+    scene.grid.SetObstacle(3, 5);
+    scene.grid.SetObstacle(4, 5);
+    scene.grid.SetGoal(scene.goalX, scene.goalY);
+    scene.agents.Add(1, 1);
+    scene.agents.Add(1, 7);
+    scene.agents.Add(1, 12);
+    return scene;
+}
+
+ViewerScene CreateCrowdScene()
+{
+    constexpr std::size_t width = 512;
+    constexpr std::size_t height = 512;
+    constexpr std::size_t agentCount = 100000;
+    ViewerScene scene{MassMotion::Grid(width, height), {}, width / 2, height / 2,
+                      "MassMotion - 100000 agents to center | 1: small, 2: crowd"};
+    const auto addSquareWall = [&scene](std::size_t inset, int gapOffset)
+    {
+        constexpr int halfGap = 20;
+        constexpr int center = static_cast<int>(width / 2);
+        const std::size_t end = width - inset - 1;
+        const auto upperRightGap = static_cast<std::size_t>(center + gapOffset - halfGap);
+        const auto lowerLeftGap = static_cast<std::size_t>(center - gapOffset - halfGap);
+        for (std::size_t position = inset; position <= end; ++position)
+        {
+            if (position < upperRightGap || position >= upperRightGap + halfGap * 2)
+            {
+                scene.grid.SetObstacle(position, inset);
+                scene.grid.SetObstacle(end, position);
+            }
+            if (position < lowerLeftGap || position >= lowerLeftGap + halfGap * 2)
+            {
+                scene.grid.SetObstacle(position, end);
+                scene.grid.SetObstacle(inset, position);
+            }
+        }
+    };
+    addSquareWall(96, -56);
+    addSquareWall(176, 36);
+    scene.grid.SetGoal(scene.goalX, scene.goalY);
+
+    scene.agents.Reserve(agentCount);
+    for (std::size_t layer = 0; scene.agents.GetCount() < agentCount; ++layer)
+    {
+        const std::size_t first = 8 + layer;
+        const std::size_t last = width - 9 - layer;
+        for (std::size_t offset = 0; offset < last - first && scene.agents.GetCount() < agentCount; ++offset)
+        {
+            const std::size_t positions[][2] = {
+                {first + offset, first},
+                {last, first + offset},
+                {last - offset, last},
+                {first, last - offset},
+            };
+            for (const auto& position : positions)
+            {
+                if (scene.agents.GetCount() == agentCount)
+                {
+                    break;
+                }
+                scene.agents.Add(position[0], position[1], 8.0f);
+            }
+        }
+    }
+    return scene;
+}
+
 bool DrawArrow(SDL_Renderer* renderer, MassMotion::Cell cell, SDL_FPoint center, float cellSize)
 {
     if (cell == MassMotion::Cell::None)
@@ -70,32 +153,37 @@ bool DrawGrid(SDL_Renderer* renderer, const MassMotion::GridState& state, std::s
     const float originX = (static_cast<float>(outputWidth) - gridWidth) * 0.5f;
     const float originY = (static_cast<float>(outputHeight) - gridHeight) * 0.5f;
     gridRect = {originX, originY, gridWidth, gridHeight};
+    const bool showDetails = cellSize >= minimumDetailCellSize;
     const float inset = cellSize * 0.08f;
+    const float goalSize = std::max(cellSize - inset * 2.0f, 6.0f);
     const SDL_FRect goalRect = {
-        originX + static_cast<float>(goalX) * cellSize + inset,
-        originY + static_cast<float>(goalY) * cellSize + inset,
-        cellSize - inset * 2.0f,
-        cellSize - inset * 2.0f,
+        originX + (static_cast<float>(goalX) + 0.5f) * cellSize - goalSize * 0.5f,
+        originY + (static_cast<float>(goalY) + 0.5f) * cellSize - goalSize * 0.5f,
+        goalSize,
+        goalSize,
     };
     if (!SDL_SetRenderDrawColor(renderer, 50, 145, 100, 255) || !SDL_RenderFillRect(renderer, &goalRect) ||
         !SDL_SetRenderDrawColor(renderer, 58, 70, 84, 255))
     {
         return false;
     }
-    for (std::size_t x = 0; x <= state.width; ++x)
+    if (showDetails)
     {
-        const float lineX = originX + static_cast<float>(x) * cellSize;
-        if (!SDL_RenderLine(renderer, lineX, originY, lineX, originY + gridHeight))
+        for (std::size_t x = 0; x <= state.width; ++x)
         {
-            return false;
+            const float lineX = originX + static_cast<float>(x) * cellSize;
+            if (!SDL_RenderLine(renderer, lineX, originY, lineX, originY + gridHeight))
+            {
+                return false;
+            }
         }
-    }
-    for (std::size_t y = 0; y <= state.height; ++y)
-    {
-        const float lineY = originY + static_cast<float>(y) * cellSize;
-        if (!SDL_RenderLine(renderer, originX, lineY, originX + gridWidth, lineY))
+        for (std::size_t y = 0; y <= state.height; ++y)
         {
-            return false;
+            const float lineY = originY + static_cast<float>(y) * cellSize;
+            if (!SDL_RenderLine(renderer, originX, lineY, originX + gridWidth, lineY))
+            {
+                return false;
+            }
         }
     }
     for (std::size_t y = 0; y < state.height; ++y)
@@ -104,11 +192,12 @@ bool DrawGrid(SDL_Renderer* renderer, const MassMotion::GridState& state, std::s
         {
             if (state.obstacles[y * state.width + x])
             {
+                const float obstacleSize = std::max(showDetails ? cellSize - inset * 2.0f : cellSize, 2.0f);
                 const SDL_FRect obstacleRect = {
-                    originX + static_cast<float>(x) * cellSize + inset,
-                    originY + static_cast<float>(y) * cellSize + inset,
-                    cellSize - inset * 2.0f,
-                    cellSize - inset * 2.0f,
+                    originX + (static_cast<float>(x) + 0.5f) * cellSize - obstacleSize * 0.5f,
+                    originY + (static_cast<float>(y) + 0.5f) * cellSize - obstacleSize * 0.5f,
+                    obstacleSize,
+                    obstacleSize,
                 };
                 if (!SDL_SetRenderDrawColor(renderer, 190, 100, 70, 255) ||
                     !SDL_RenderFillRect(renderer, &obstacleRect))
@@ -118,12 +207,15 @@ bool DrawGrid(SDL_Renderer* renderer, const MassMotion::GridState& state, std::s
                 continue;
             }
 
-            const SDL_FPoint center = {originX + (static_cast<float>(x) + 0.5f) * cellSize,
-                                       originY + (static_cast<float>(y) + 0.5f) * cellSize};
-            if (!SDL_SetRenderDrawColor(renderer, 164, 205, 225, 255) ||
-                !DrawArrow(renderer, state.cells[y * state.width + x], center, cellSize))
+            if (showDetails)
             {
-                return false;
+                const SDL_FPoint center = {originX + (static_cast<float>(x) + 0.5f) * cellSize,
+                                           originY + (static_cast<float>(y) + 0.5f) * cellSize};
+                if (!SDL_SetRenderDrawColor(renderer, 164, 205, 225, 255) ||
+                    !DrawArrow(renderer, state.cells[y * state.width + x], center, cellSize))
+                {
+                    return false;
+                }
             }
         }
     }
@@ -182,8 +274,24 @@ bool DrawAgent(SDL_Renderer* renderer, const MassMotion::Agents& agents, std::si
 }
 
 bool DrawAgents(SDL_Renderer* renderer, const MassMotion::Agents& agents, const SDL_FRect& gridRect,
-                std::size_t gridWidth)
+                std::size_t gridWidth, std::vector<SDL_FPoint>& points)
 {
+    if (gridRect.w <= 0.0f || agents.GetCount() == 0)
+    {
+        return true;
+    }
+    const float cellSize = gridRect.w / static_cast<float>(gridWidth);
+    if (cellSize < minimumDetailCellSize)
+    {
+        points.resize(agents.GetCount());
+        for (std::size_t i = 0; i < agents.GetCount(); ++i)
+        {
+            const auto position = agents.GetPosition(i);
+            points[i] = {gridRect.x + position.x * cellSize, gridRect.y + position.y * cellSize};
+        }
+        return SDL_SetRenderDrawColor(renderer, 255, 204, 64, 255) &&
+               SDL_RenderPoints(renderer, points.data(), static_cast<int>(points.size()));
+    }
     for (std::size_t i = 0; i < agents.GetCount(); ++i)
     {
         if (!DrawAgent(renderer, agents, i, gridRect, gridWidth))
@@ -196,8 +304,9 @@ bool DrawAgents(SDL_Renderer* renderer, const MassMotion::Agents& agents, const 
 
 int RunViewer()
 {
+    auto scene = CreateCrowdScene();
     const std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)> window(
-        SDL_CreateWindow("MassMotion Grid Viewer", 960, 720, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY),
+        SDL_CreateWindow(scene.title, 960, 720, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY),
         SDL_DestroyWindow);
     if (!window)
     {
@@ -213,19 +322,9 @@ int RunViewer()
         return EXIT_FAILURE;
     }
 
-    MassMotion::Grid grid(20, 14);
-    std::size_t goalX = 10;
-    std::size_t goalY = 7;
-    grid.SetGoal(goalX, goalY);
-    grid.SetObstacle(2, 5);
-    grid.SetObstacle(3, 5);
-    grid.SetObstacle(4, 5);
-    MassMotion::GridState state = grid.GetState();
+    MassMotion::GridState state = scene.grid.GetState();
     MassMotion::ThreadPool threadPool;
-    MassMotion::Agents agents;
-    agents.Add(1, 1);
-    agents.Add(1, 7);
-    agents.Add(1, 12);
+    std::vector<SDL_FPoint> agentPoints;
 
     Uint64 previousTicks = SDL_GetTicksNS();
 
@@ -235,12 +334,13 @@ int RunViewer()
         // Avoid a large jump after dragging the window or resuming the application.
         const double elapsedSeconds = std::min(static_cast<double>(ticks - previousTicks) / 1.0e9, 0.1);
         previousTicks = ticks;
-        agents.Update(state, elapsedSeconds, threadPool);
+        scene.agents.Update(state, elapsedSeconds, threadPool);
 
         SDL_FRect gridRect{};
         if (!SDL_SetRenderDrawColor(renderer.get(), 24, 28, 34, 255) || !SDL_RenderClear(renderer.get()) ||
-            !DrawGrid(renderer.get(), state, goalX, goalY, gridRect) ||
-            !DrawAgents(renderer.get(), agents, gridRect, state.width) || !SDL_RenderPresent(renderer.get()))
+            !DrawGrid(renderer.get(), state, scene.goalX, scene.goalY, gridRect) ||
+            !DrawAgents(renderer.get(), scene.agents, gridRect, state.width, agentPoints) ||
+            !SDL_RenderPresent(renderer.get()))
         {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not render frame: %s", SDL_GetError());
             return EXIT_FAILURE;
@@ -253,6 +353,20 @@ int RunViewer()
                 (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE))
             {
                 return EXIT_SUCCESS;
+            }
+
+            if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                (event.key.key == SDLK_1 || event.key.key == SDLK_2))
+            {
+                scene = event.key.key == SDLK_1 ? CreateSmallScene() : CreateCrowdScene();
+                state = scene.grid.GetState();
+                if (!SDL_SetWindowTitle(window.get(), scene.title))
+                {
+                    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not set window title: %s", SDL_GetError());
+                    return EXIT_FAILURE;
+                }
+                previousTicks = SDL_GetTicksNS();
+                break;
             }
 
             if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
@@ -280,11 +394,11 @@ int RunViewer()
                     std::min(static_cast<std::size_t>((mouse.y - gridRect.y) / cellSize), state.height - 1);
                 if (event.button.button == SDL_BUTTON_RIGHT)
                 {
-                    if (x == goalX && y == goalY)
+                    if (x == scene.goalX && y == scene.goalY)
                     {
                         continue;
                     }
-                    grid.SetObstacle(x, y, !state.obstacles[y * state.width + x]);
+                    scene.grid.SetObstacle(x, y, !state.obstacles[y * state.width + x]);
                 }
                 else
                 {
@@ -292,11 +406,11 @@ int RunViewer()
                     {
                         continue;
                     }
-                    grid.SetGoal(x, y);
-                    goalX = x;
-                    goalY = y;
+                    scene.grid.SetGoal(x, y);
+                    scene.goalX = x;
+                    scene.goalY = y;
                 }
-                state = grid.GetState();
+                state = scene.grid.GetState();
             }
         }
         SDL_Delay(16);
