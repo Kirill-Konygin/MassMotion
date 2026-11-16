@@ -54,8 +54,8 @@ class Agents
     void SimulateStep(const GridState& state, ProximitySearch& proximitySearch, float elapsedSeconds,
                       ThreadPool& threadPool);
 
-    void CalculateSteering(const GridState& state, const ProximitySearch& proximitySearch,
-                           std::size_t begin, std::size_t end);
+    void CalculateSteering(const GridState& state, const ProximitySearch& proximitySearch, std::size_t begin,
+                           std::size_t end);
     [[nodiscard]] static Vector2 GetDesiredFlowDirection(const State& agent, const GridState& state);
     [[nodiscard]] static Vector2 CalculateFlowFollowingForce(const State& agent, const GridState& state);
     [[nodiscard]] Vector2 CalculateSeparationForce(const State& agent, std::span<const std::size_t> neighbors,

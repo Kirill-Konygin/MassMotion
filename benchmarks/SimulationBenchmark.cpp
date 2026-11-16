@@ -114,8 +114,8 @@ int main()
         MassMotion::ThreadPool threadPool;
         std::cout << scenario.name << " (" << initialAgents.GetCount() << " agents)\n" << std::flush;
         const double averageMicroseconds = RunBenchmark(initialAgents, state, threadPool);
-        std::cout << "Average step: " << std::fixed << std::setprecision(2)
-                  << averageMicroseconds << " us\n\n" << std::flush;
+        std::cout << "Average step: " << std::fixed << std::setprecision(2) << averageMicroseconds << " us\n\n"
+                  << std::flush;
     }
 
     return EXIT_SUCCESS;

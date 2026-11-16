@@ -8,17 +8,6 @@ The project includes an SDL3 viewer and a standalone simulation benchmark.
 
 ![100,000 agents moving toward a central goal](docs/crowd.gif)
 
-The first 20 seconds of the default scene, played at 2× speed. Yellow points are
-agents, orange cells are obstacles, and the green cell is the goal.
-
-## Features
-
-- Move agents toward a shared goal while navigating around obstacles.
-- Change the goal and add or remove obstacles during simulation.
-- Reduce crowding through separation between nearby agents.
-- Set a maximum speed for each agent and query its position and facing direction.
-- Update large crowds using multiple CPU threads.
-
 ## Performance
 
 Example results from [`SimulationBenchmark.cpp`](benchmarks/SimulationBenchmark.cpp):
@@ -29,7 +18,7 @@ Example results from [`SimulationBenchmark.cpp`](benchmarks/SimulationBenchmark.
 
 Each scenario runs five times with fresh agents. Each run has 30 warm-up steps
 followed by 120 measured steps at `1/30` second per step. The results below are the
-mean time of one simulation step (`Agents::Update`). Scene initialization, changes
+mean time of one simulation step. Scene initialization, changes
 to the goal or obstacles, and rendering are outside the measurement.
 
 ### Sparse — 10,000 Agents

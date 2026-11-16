@@ -26,8 +26,7 @@ struct ViewerScene
 
 ViewerScene CreateSmallScene()
 {
-    ViewerScene scene{MassMotion::Grid(20, 14), {}, 10, 7,
-                      "MassMotion - 3 agents | 1: small, 2: crowd"};
+    ViewerScene scene{MassMotion::Grid(20, 14), {}, 10, 7, "MassMotion - 3 agents | 1: small, 2: crowd"};
     scene.grid.SetObstacle(2, 5);
     scene.grid.SetObstacle(3, 5);
     scene.grid.SetObstacle(4, 5);
@@ -43,7 +42,10 @@ ViewerScene CreateCrowdScene()
     constexpr std::size_t width = 512;
     constexpr std::size_t height = 512;
     constexpr std::size_t agentCount = 100000;
-    ViewerScene scene{MassMotion::Grid(width, height), {}, width / 2, height / 2,
+    ViewerScene scene{MassMotion::Grid(width, height),
+                      {},
+                      width / 2,
+                      height / 2,
                       "MassMotion - 100000 agents to center | 1: small, 2: crowd"};
     const auto addSquareWall = [&scene](std::size_t inset, int gapOffset)
     {

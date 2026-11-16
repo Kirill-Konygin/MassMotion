@@ -36,8 +36,7 @@ bool IsWithinRadius(Vector2 first, Vector2 second, double radiusSquared)
     return dx * dx + dy * dy < radiusSquared;
 }
 
-ProximitySearch::ProximitySearch(double radius, std::size_t width, std::size_t height)
-    : mRadiusSquared(radius * radius)
+ProximitySearch::ProximitySearch(double radius, std::size_t width, std::size_t height) : mRadiusSquared(radius * radius)
 {
     if (!std::isfinite(radius) || radius < 0.0)
     {
@@ -77,13 +76,14 @@ void ProximitySearch::Update(const Agents& agents, ThreadPool& threadPool)
     const std::size_t chunkCount = (agentCount + chunkSize - 1) / chunkSize;
     for (std::size_t chunk = 0; chunk < chunkCount; ++chunk)
     {
-        threadPool.Enqueue([this, &agents, chunk]
-        {
-            thread_local WorkerContext context;
-            const std::size_t begin = chunk * chunkSize;
-            const std::size_t end = std::min(begin + chunkSize, agents.GetCount());
-            ProcessChunk(agents, begin, end, context);
-        });
+        threadPool.Enqueue(
+            [this, &agents, chunk]
+            {
+                thread_local WorkerContext context;
+                const std::size_t begin = chunk * chunkSize;
+                const std::size_t end = std::min(begin + chunkSize, agents.GetCount());
+                ProcessChunk(agents, begin, end, context);
+            });
     }
     threadPool.Wait();
 }

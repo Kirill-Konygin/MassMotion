@@ -112,30 +112,32 @@ void Agents::SimulateStep(const GridState& state, ProximitySearch& proximitySear
     const std::size_t chunkCount = (mAgents.size() + chunkSize - 1) / chunkSize;
     for (std::size_t chunk = 0; chunk < chunkCount; ++chunk)
     {
-        threadPool.Enqueue([this, &state, &proximitySearch, chunk]
-        {
-            const std::size_t begin = chunk * chunkSize;
-            const std::size_t end = std::min(begin + chunkSize, mAgents.size());
-            CalculateSteering(state, proximitySearch, begin, end);
-        });
+        threadPool.Enqueue(
+            [this, &state, &proximitySearch, chunk]
+            {
+                const std::size_t begin = chunk * chunkSize;
+                const std::size_t end = std::min(begin + chunkSize, mAgents.size());
+                CalculateSteering(state, proximitySearch, begin, end);
+            });
     }
     // Separation reads neighbor positions; finish every steering task before moving agents.
     threadPool.Wait();
 
     for (std::size_t chunk = 0; chunk < chunkCount; ++chunk)
     {
-        threadPool.Enqueue([this, &state, elapsedSeconds, chunk]
-        {
-            const std::size_t begin = chunk * chunkSize;
-            const std::size_t end = std::min(begin + chunkSize, mAgents.size());
-            Integrate(state, elapsedSeconds, begin, end);
-        });
+        threadPool.Enqueue(
+            [this, &state, elapsedSeconds, chunk]
+            {
+                const std::size_t begin = chunk * chunkSize;
+                const std::size_t end = std::min(begin + chunkSize, mAgents.size());
+                Integrate(state, elapsedSeconds, begin, end);
+            });
     }
     threadPool.Wait();
 }
 
-void Agents::CalculateSteering(const GridState& state, const ProximitySearch& proximitySearch,
-                               std::size_t begin, std::size_t end)
+void Agents::CalculateSteering(const GridState& state, const ProximitySearch& proximitySearch, std::size_t begin,
+                               std::size_t end)
 {
     for (std::size_t i = begin; i < end; ++i)
     {
